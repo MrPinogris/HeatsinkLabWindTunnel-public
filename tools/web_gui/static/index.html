@@ -1,0 +1,1110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HeatsinkLab PID Tuner</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #1a1a1e;
+    --surface: #25252b;
+    --surface2: #2e2e36;
+    --border: #3a3a45;
+    --accent: #4f9cf9;
+    --accent2: #f97316;
+    --green: #22c55e;
+    --red: #ef4444;
+    --yellow: #eab308;
+    --text: #e2e8f0;
+    --text-muted: #94a3b8;
+    --input-bg: #1e1e24;
+    --radius: 6px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-size: 13px;
+    min-height: 100vh;
+  }
+  h2 { font-size: 15px; font-weight: 600; color: var(--accent); margin-bottom: 10px; }
+  .app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+  .header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  .header-title { font-size: 16px; font-weight: 700; color: var(--accent); white-space: nowrap; }
+  .status-pill {
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    background: var(--surface2);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .status-pill.connected { background: rgba(34,197,94,.15); color: var(--green); border-color: var(--green); }
+  .status-pill.warning { background: rgba(234,179,8,.15); color: var(--yellow); border-color: var(--yellow); }
+  .csv-pill { background: rgba(79,156,249,.15); color: var(--accent); border-color: var(--accent); }
+  .main { display: flex; flex: 1; overflow: hidden; }
+  .sidebar {
+    width: 320px;
+    min-width: 280px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  .content { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+  .chart-area {
+    flex: 1;
+    padding: 12px 12px 0 12px;
+    min-height: 150px;
+    display: flex;
+    flex-direction: column;
+  }
+  .chart-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .chart-controls {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+    flex-shrink: 0;
+  }
+  .series-checks { flex-shrink: 0; }
+  .canvas-container {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+  }
+  canvas#chart { position: absolute; inset: 0; }
+  .log-area {
+    height: 220px;
+    min-height: 80px;
+    flex-shrink: 0;
+    padding: 0 12px 12px;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+  .log-resize-handle {
+    height: 6px;
+    cursor: ns-resize;
+    background: transparent;
+    border-top: 2px solid var(--border);
+    margin-bottom: 6px;
+    flex-shrink: 0;
+    transition: border-color .15s;
+  }
+  .log-resize-handle:hover { border-top-color: var(--accent); }
+  .log-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+    flex-shrink: 0;
+  }
+  .log-box {
+    flex: 1;
+    background: #0a0a0d;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow-y: auto;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 11.5px;
+    color: #a0aec0;
+    padding: 6px 8px;
+    line-height: 1.6;
+    min-height: 0;
+  }
+  .log-line { display: flex; gap: 6px; }
+  .log-time { color: #4a5568; flex-shrink: 0; user-select: none; }
+  .log-text { word-break: break-all; }
+  .log-line.telem .log-text  { color: #68d391; }
+  .log-line.warn  .log-text  { color: #f6ad55; }
+  .log-line.error .log-text  { color: #fc8181; }
+  .log-line.info  .log-text  { color: #63b3ed; }
+  .log-line.sent  .log-text  { color: #b794f4; }
+  .section {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px;
+  }
+  .section-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  label { color: var(--text-muted); font-size: 12px; }
+  input, select {
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: var(--radius);
+    padding: 4px 7px;
+    font-size: 12px;
+    outline: none;
+    width: 100%;
+  }
+  input:focus, select:focus { border-color: var(--accent); }
+  input[type=range] {
+    padding: 0;
+    height: 6px;
+    cursor: pointer;
+    accent-color: var(--accent);
+    background: transparent;
+    border: none;
+  }
+  input[type=checkbox] { width: auto; accent-color: var(--accent); cursor: pointer; }
+  button {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: var(--radius);
+    padding: 5px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background .15s, border-color .15s;
+    white-space: nowrap;
+  }
+  button:hover { background: var(--border); border-color: var(--text-muted); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { background: #3b82f6; }
+  button.danger { background: rgba(239,68,68,.15); border-color: var(--red); color: var(--red); }
+  button.danger:hover { background: rgba(239,68,68,.3); }
+  button.success { background: rgba(34,197,94,.15); border-color: var(--green); color: var(--green); }
+  button.success:hover { background: rgba(34,197,94,.3); }
+  button.small { padding: 3px 8px; font-size: 11px; }
+  .row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+  .row label { min-width: 75px; flex-shrink: 0; }
+  .param-row { display: grid; grid-template-columns: 75px 1fr auto; gap: 5px; align-items: center; margin-bottom: 5px; }
+  .param-row-slider { grid-column: 2 / -1; margin-top: -2px; margin-bottom: 4px; }
+  .telemetry-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 10px;
+  }
+  .telem-item { display: flex; justify-content: space-between; align-items: baseline; padding: 2px 0; border-bottom: 1px solid rgba(58,58,69,.5); }
+  .telem-label { color: var(--text-muted); font-size: 11px; }
+  .telem-value { font-weight: 600; font-size: 12px; color: var(--text); font-variant-numeric: tabular-nums; }
+  .telem-value.highlight { color: var(--accent); }
+  .telem-value.warn { color: var(--yellow); }
+  .radio-group { display: flex; gap: 10px; }
+  .radio-group label { display: flex; align-items: center; gap: 4px; cursor: pointer; color: var(--text); }
+  .series-checks { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 8px; }
+  .series-check { display: flex; align-items: center; gap: 5px; cursor: pointer; padding: 2px 0; }
+  .series-check span { font-size: 11px; }
+  .swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+  .flex-gap { display: flex; gap: 6px; flex-wrap: wrap; }
+  .mode-btns { display: flex; gap: 6px; }
+  .mode-btn { flex: 1; text-align: center; }
+  .mode-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .ws-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--red);
+    flex-shrink: 0;
+  }
+  .ws-dot.ok { background: var(--green); }
+  .ws-dot.warn { background: var(--yellow); }
+  @media (max-width: 900px) {
+    .main { flex-direction: column; }
+    .sidebar { width: 100%; min-width: 0; height: auto; max-height: 50vh; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-title">HeatsinkLab PID Tuner</div>
+    <span id="connPill" class="status-pill">Disconnected</span>
+    <span id="csvPill" class="status-pill" style="display:none">CSV: On</span>
+    <span style="display:flex;align-items:center;gap:4px;margin-left:auto;">
+      <span class="ws-dot" id="wsDot"></span>
+      <span id="wsLabel" style="font-size:11px;color:var(--text-muted)">WebSocket</span>
+    </span>
+  </div>
+
+  <div class="main">
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+
+      <!-- Connection -->
+      <div class="section">
+        <div class="section-title">Serial Connection</div>
+        <div class="row">
+          <label>Port</label>
+          <select id="portSel"></select>
+          <button class="small" onclick="refreshPorts()">&#8635;</button>
+        </div>
+        <div class="row">
+          <label>Baud</label>
+          <select id="baudSel">
+            <option>9600</option><option>19200</option><option>38400</option>
+            <option>57600</option><option selected>115200</option><option>230400</option>
+            <option>460800</option><option>921600</option>
+          </select>
+        </div>
+        <div class="flex-gap" style="margin-top:6px;">
+          <button class="primary" id="btnConnect" onclick="connect()">Connect</button>
+          <button class="danger" id="btnDisconnect" onclick="disconnect()" disabled>Disconnect</button>
+        </div>
+        <div style="margin-top:8px;" class="flex-gap">
+          <button class="success small" id="btnCsvStart" onclick="startCsv()" disabled>Start CSV</button>
+          <button class="small" id="btnCsvStop" onclick="stopCsv()" disabled>Stop CSV</button>
+        </div>
+      </div>
+
+      <!-- PID Parameters -->
+      <div class="section">
+        <div class="section-title">Controller Parameters</div>
+
+        <div id="paramRows">
+          <!-- KP -->
+          <div class="param-row">
+            <label>KP</label>
+            <input type="text" id="pKP" value="8.0">
+            <button class="small" onclick="setParam('KP')">Set</button>
+          </div>
+          <!-- KI -->
+          <div class="param-row">
+            <label>KI</label>
+            <input type="text" id="pKI" value="0.06">
+            <button class="small" onclick="setParam('KI')">Set</button>
+          </div>
+          <!-- KD -->
+          <div class="param-row">
+            <label>KD</label>
+            <input type="text" id="pKD" value="0.0">
+            <button class="small" onclick="setParam('KD')">Set</button>
+          </div>
+          <!-- BIAS -->
+          <div class="param-row">
+            <label>BIAS</label>
+            <input type="text" id="pBIAS" value="0.0">
+            <button class="small" onclick="setParam('BIAS')">Set</button>
+          </div>
+          <!-- SPBIAS -->
+          <div class="param-row">
+            <label>SPBIAS</label>
+            <input type="text" id="pSPBIAS" value="0.0" oninput="syncSlider('SPBIAS')">
+            <button class="small" onclick="setParam('SPBIAS')">Set</button>
+          </div>
+          <div class="param-row-slider">
+            <input type="range" id="sSPBIAS" min="-200" max="200" step="0.5" value="0" oninput="sliderToEntry('SPBIAS')">
+          </div>
+          <!-- SP -->
+          <div class="param-row">
+            <label>SP</label>
+            <input type="text" id="pSP" value="70.0" oninput="syncSlider('SP')">
+            <button class="small" onclick="setParam('SP')">Set</button>
+          </div>
+          <div class="param-row-slider">
+            <input type="range" id="sSP" min="-20" max="400" step="0.5" value="70" oninput="sliderToEntry('SP')">
+          </div>
+          <!-- ALPHA -->
+          <div class="param-row">
+            <label>ALPHA</label>
+            <input type="text" id="pALPHA" value="0.25" oninput="syncSlider('ALPHA')">
+            <button class="small" onclick="setParam('ALPHA')">Set</button>
+          </div>
+          <div class="param-row-slider">
+            <input type="range" id="sALPHA" min="0.001" max="1.0" step="0.001" value="0.25" oninput="sliderToEntry('ALPHA')">
+          </div>
+          <!-- MAXSTEP -->
+          <div class="param-row">
+            <label>MAXSTEP</label>
+            <input type="text" id="pMAXSTEP" value="15" oninput="syncSlider('MAXSTEP')">
+            <button class="small" onclick="setParam('MAXSTEP')">Set</button>
+          </div>
+          <div class="param-row-slider">
+            <input type="range" id="sMAXSTEP" min="0" max="255" step="1" value="15" oninput="sliderToEntry('MAXSTEP')">
+          </div>
+          <!-- ENTERCNT -->
+          <div class="param-row">
+            <label>ENTERCNT</label>
+            <input type="text" id="pENTERCNT" value="16" oninput="syncSlider('ENTERCNT')">
+            <button class="small" onclick="setParam('ENTERCNT')">Set</button>
+          </div>
+          <div class="param-row-slider">
+            <input type="range" id="sENTERCNT" min="1" max="400" step="1" value="16" oninput="sliderToEntry('ENTERCNT')">
+          </div>
+          <!-- EXITCNT -->
+          <div class="param-row">
+            <label>EXITCNT</label>
+            <input type="text" id="pEXITCNT" value="8" oninput="syncSlider('EXITCNT')">
+            <button class="small" onclick="setParam('EXITCNT')">Set</button>
+          </div>
+          <div class="param-row-slider">
+            <input type="range" id="sEXITCNT" min="1" max="400" step="1" value="8" oninput="sliderToEntry('EXITCNT')">
+          </div>
+          <!-- FAN -->
+          <div class="param-row">
+            <label>FAN</label>
+            <input type="text" id="pFAN" value="0" oninput="syncSlider('FAN')">
+            <button class="small" onclick="setParam('FAN')">Set</button>
+          </div>
+          <div class="param-row-slider">
+            <input type="range" id="sFAN" min="0" max="100" step="0.5" value="0" oninput="sliderToEntry('FAN')">
+          </div>
+          <!-- MANPWM -->
+          <div class="param-row">
+            <label>MANPWM</label>
+            <input type="text" id="pMANPWM" value="0.0" oninput="syncSlider('MANPWM')">
+            <button class="small" onclick="setParam('MANPWM')">Set</button>
+          </div>
+          <div class="param-row-slider">
+            <input type="range" id="sMANPWM" min="0" max="255" step="0.5" value="0" oninput="sliderToEntry('MANPWM')">
+          </div>
+        </div>
+
+        <!-- MODE -->
+        <div style="margin-top:8px;">
+          <label style="display:block;margin-bottom:5px;">MODE</label>
+          <div class="mode-btns">
+            <button class="mode-btn active" id="modeAUTO" onclick="setMode('AUTO')">AUTO</button>
+            <button class="mode-btn" id="modeMANUAL" onclick="setMode('MANUAL')">MANUAL</button>
+            <button class="mode-btn" id="modeSMART" onclick="setMode('SMART')">SMART</button>
+          </div>
+        </div>
+
+        <!-- Fan inversion + heater -->
+        <div style="margin-top:8px;" class="row">
+          <input type="checkbox" id="fanInv" onchange="setFanInv()">
+          <label for="fanInv" style="min-width:auto;cursor:pointer;">Fan PWM Inverted</label>
+        </div>
+        <div class="flex-gap" style="margin-top:6px;">
+          <button class="success small" onclick="sendCmd('SET RUN ON')">Start Heater</button>
+          <button class="danger small" onclick="sendCmd('SET RUN OFF')">Stop Heater</button>
+        </div>
+
+        <!-- Bulk actions -->
+        <div class="flex-gap" style="margin-top:10px;">
+          <button onclick="applyAll()">Apply All</button>
+          <button onclick="sendCmd('GET')">Get From ESP32</button>
+        </div>
+      </div>
+
+      <!-- Live Telemetry -->
+      <div class="section">
+        <div class="section-title">Live Telemetry</div>
+        <div class="telemetry-grid">
+          <div class="telem-item"><span class="telem-label">Raw Temp °C</span><span class="telem-value highlight" id="tRaw">-</span></div>
+          <div class="telem-item"><span class="telem-label">Filtered °C</span><span class="telem-value highlight" id="tTemp">-</span></div>
+          <div class="telem-item"><span class="telem-label">Smoothed °C</span><span class="telem-value" id="tSmooth">-</span></div>
+          <div class="telem-item"><span class="telem-label">Setpoint °C</span><span class="telem-value" id="tSP">-</span></div>
+          <div class="telem-item"><span class="telem-label">Eff. SP °C</span><span class="telem-value" id="tEffSP">-</span></div>
+          <div class="telem-item"><span class="telem-label">PWM</span><span class="telem-value highlight" id="tPWM">-</span></div>
+          <div class="telem-item"><span class="telem-label">P Term</span><span class="telem-value" id="tP">-</span></div>
+          <div class="telem-item"><span class="telem-label">I Term</span><span class="telem-value" id="tI">-</span></div>
+          <div class="telem-item"><span class="telem-label">D Term</span><span class="telem-value" id="tD">-</span></div>
+          <div class="telem-item"><span class="telem-label">PID Out</span><span class="telem-value" id="tOut">-</span></div>
+          <div class="telem-item"><span class="telem-label">Bias</span><span class="telem-value" id="tBias">-</span></div>
+          <div class="telem-item"><span class="telem-label">SP Bias °C</span><span class="telem-value" id="tSPBias">-</span></div>
+          <div class="telem-item"><span class="telem-label">Fan Speed %</span><span class="telem-value" id="tFan">-</span></div>
+          <div class="telem-item"><span class="telem-label">Fan PWM Raw</span><span class="telem-value" id="tFanPWM">-</span></div>
+          <div class="telem-item"><span class="telem-label">Mode</span><span class="telem-value" id="tMode">-</span></div>
+          <div class="telem-item"><span class="telem-label">State</span><span class="telem-value" id="tState">-</span></div>
+          <div class="telem-item"><span class="telem-label">Man PWM</span><span class="telem-value" id="tManPWM">-</span></div>
+          <div class="telem-item"><span class="telem-label">Hold PWM</span><span class="telem-value" id="tHoldPWM">-</span></div>
+          <div class="telem-item"><span class="telem-label">Enter %</span><span class="telem-value" id="tEnterProg">-</span></div>
+          <div class="telem-item"><span class="telem-label">Exit %</span><span class="telem-value" id="tExitProg">-</span></div>
+          <div class="telem-item"><span class="telem-label">Abs Err °C</span><span class="telem-value warn" id="tAbsErr">-</span></div>
+          <div class="telem-item"><span class="telem-label">Run State</span><span class="telem-value" id="tRun">-</span></div>
+          <div class="telem-item"><span class="telem-label">Fan Inv</span><span class="telem-value" id="tFanInv">-</span></div>
+        </div>
+      </div>
+
+    </div><!-- /sidebar -->
+
+    <!-- Main content -->
+    <div class="content">
+
+      <!-- Chart area -->
+      <div class="chart-area">
+        <div class="chart-wrap">
+          <div class="chart-controls">
+            <div class="radio-group">
+              <label><input type="radio" name="viewMode" value="rolling" checked onchange="setViewMode('rolling')"> Rolling</label>
+              <label><input type="radio" name="viewMode" value="full" onchange="setViewMode('full')"> Full</label>
+            </div>
+            <label style="display:flex;align-items:center;gap:4px;">
+              <input type="checkbox" id="autoScroll" checked onchange="updateChart()">
+              Auto-scroll
+            </label>
+            <label style="display:flex;align-items:center;gap:4px;min-width:0;">
+              Window&nbsp;
+              <input type="text" id="windowSec" value="120" style="width:55px;" onchange="updateChart()">s
+            </label>
+            <label style="display:flex;align-items:center;gap:4px;min-width:0;">
+              Max pts&nbsp;
+              <input type="text" id="maxPts" value="5000" style="width:60px;">
+            </label>
+            <button class="small" onclick="clearChart()">Clear</button>
+          </div>
+
+          <!-- Series toggles -->
+          <div class="series-checks" style="margin-bottom:8px;">
+            <label class="series-check"><input type="checkbox" checked onchange="toggleSeries('raw_temp')"><span class="swatch" style="background:#94a3b8"></span><span>Raw Temp</span></label>
+            <label class="series-check"><input type="checkbox" checked onchange="toggleSeries('temp')"><span class="swatch" style="background:#60a5fa"></span><span>Temp</span></label>
+            <label class="series-check"><input type="checkbox" checked onchange="toggleSeries('smooth')"><span class="swatch" style="background:#34d399"></span><span>Smooth</span></label>
+            <label class="series-check"><input type="checkbox" checked onchange="toggleSeries('sp')"><span class="swatch" style="background:#f97316"></span><span>SP</span></label>
+            <label class="series-check"><input type="checkbox" checked onchange="toggleSeries('pwm')"><span class="swatch" style="background:#a78bfa"></span><span>PWM</span></label>
+            <label class="series-check"><input type="checkbox" onchange="toggleSeries('fan_pwm')"><span class="swatch" style="background:#f472b6"></span><span>Fan PWM</span></label>
+            <label class="series-check"><input type="checkbox" onchange="toggleSeries('p_term')"><span class="swatch" style="background:#fbbf24"></span><span>P Term</span></label>
+            <label class="series-check"><input type="checkbox" onchange="toggleSeries('i_term')"><span class="swatch" style="background:#fb923c"></span><span>I Term</span></label>
+            <label class="series-check"><input type="checkbox" onchange="toggleSeries('d_term')"><span class="swatch" style="background:#e879f9"></span><span>D Term</span></label>
+            <label class="series-check"><input type="checkbox" onchange="toggleSeries('pid_out')"><span class="swatch" style="background:#38bdf8"></span><span>PID Out</span></label>
+            <label class="series-check"><input type="checkbox" onchange="toggleSeries('holdpwm')"><span class="swatch" style="background:#4ade80"></span><span>Hold PWM</span></label>
+            <label class="series-check"><input type="checkbox" onchange="toggleSeries('enter_prog')"><span class="swatch" style="background:#a3e635"></span><span>Enter %</span></label>
+            <label class="series-check"><input type="checkbox" onchange="toggleSeries('exit_prog')"><span class="swatch" style="background:#facc15"></span><span>Exit %</span></label>
+          </div>
+
+          <div class="canvas-container">
+            <canvas id="chart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Log -->
+      <div class="log-area" id="logArea">
+        <div class="log-resize-handle" id="logResizeHandle"></div>
+        <div class="log-header">
+          <h2 style="margin:0;">Serial Log</h2>
+          <label style="display:flex;align-items:center;gap:4px;margin-left:auto;color:var(--text-muted);font-size:11px;" id="logCount">0 lines</label>
+          <label style="display:flex;align-items:center;gap:4px;">
+            <input type="checkbox" id="logAutoScroll" checked>
+            Auto-scroll
+          </label>
+          <button class="small" onclick="clearLog()">Clear</button>
+        </div>
+        <div class="log-box" id="logBox"></div>
+      </div>
+
+    </div><!-- /content -->
+  </div><!-- /main -->
+</div><!-- /app -->
+
+<script>
+'use strict';
+
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+let ws = null;
+let wsReconnectTimer = null;
+let wsConnected = false;
+
+const history = {
+  ts: [], raw_temp: [], temp: [], smooth: [], sp: [],
+  pwm: [], p_term: [], i_term: [], d_term: [], pid_out: [],
+  holdpwm: [], enter_prog: [], exit_prog: [], fan_pwm: []
+};
+
+let viewMode = 'rolling';
+let serialConnected = false;
+let currentMode = 'AUTO';
+
+// ---------------------------------------------------------------------------
+// Chart setup
+// ---------------------------------------------------------------------------
+const SERIES_CFG = [
+  { key: 'raw_temp',   label: 'Raw Temp',  color: '#94a3b8', yAxis: 'y'  },
+  { key: 'temp',       label: 'Temp',      color: '#60a5fa', yAxis: 'y'  },
+  { key: 'smooth',     label: 'Smooth',    color: '#34d399', yAxis: 'y'  },
+  { key: 'sp',         label: 'SP',        color: '#f97316', yAxis: 'y'  },
+  { key: 'pwm',        label: 'PWM',       color: '#a78bfa', yAxis: 'y2' },
+  { key: 'fan_pwm',    label: 'Fan PWM',   color: '#f472b6', yAxis: 'y2', hidden: true },
+  { key: 'p_term',     label: 'P Term',    color: '#fbbf24', yAxis: 'y2', hidden: true },
+  { key: 'i_term',     label: 'I Term',    color: '#fb923c', yAxis: 'y2', hidden: true },
+  { key: 'd_term',     label: 'D Term',    color: '#e879f9', yAxis: 'y2', hidden: true },
+  { key: 'pid_out',    label: 'PID Out',   color: '#38bdf8', yAxis: 'y2', hidden: true },
+  { key: 'holdpwm',   label: 'Hold PWM',  color: '#4ade80', yAxis: 'y2', hidden: true },
+  { key: 'enter_prog', label: 'Enter %',   color: '#a3e635', yAxis: 'y2', hidden: true },
+  { key: 'exit_prog',  label: 'Exit %',    color: '#facc15', yAxis: 'y2', hidden: true },
+];
+
+const chartDatasets = SERIES_CFG.map(s => ({
+  label: s.label,
+  data: [],
+  borderColor: s.color,
+  backgroundColor: s.color + '22',
+  borderWidth: 1.5,
+  pointRadius: 0,
+  yAxisID: s.yAxis,
+  hidden: !!s.hidden,
+  tension: 0.1,
+  parsing: false,
+}));
+
+const ctx = document.getElementById('chart').getContext('2d');
+const chart = new Chart(ctx, {
+  type: 'line',
+  data: { datasets: chartDatasets },
+  options: {
+    animation: false,
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#1a1a1e',
+        borderColor: '#3a3a45',
+        borderWidth: 1,
+        titleColor: '#94a3b8',
+        bodyColor: '#e2e8f0',
+        callbacks: {
+          title: items => `t = ${items[0].parsed.x.toFixed(1)} s`,
+          label: item => ` ${item.dataset.label}: ${item.parsed.y !== undefined ? item.parsed.y.toFixed(2) : '-'}`,
+        }
+      }
+    },
+    scales: {
+      x: {
+        type: 'linear',
+        title: { display: true, text: 'Time [s]', color: '#94a3b8' },
+        ticks: { color: '#94a3b8', maxTicksLimit: 8 },
+        grid: { color: '#2e2e36' },
+      },
+      y: {
+        position: 'left',
+        title: { display: true, text: 'Temperature [°C]', color: '#60a5fa' },
+        ticks: { color: '#60a5fa' },
+        grid: { color: '#2e2e36' },
+      },
+      y2: {
+        position: 'right',
+        title: { display: true, text: 'PWM / Other', color: '#a78bfa' },
+        ticks: { color: '#a78bfa' },
+        grid: { drawOnChartArea: false },
+      },
+    }
+  }
+});
+
+function resizeChart() { chart.resize(); }
+window.addEventListener('resize', resizeChart);
+setTimeout(resizeChart, 100);
+
+// ---------------------------------------------------------------------------
+// Chart update
+// ---------------------------------------------------------------------------
+function updateChart() {
+  const maxPts = parseInt(document.getElementById('maxPts').value) || 5000;
+  const windowSec = parseFloat(document.getElementById('windowSec').value) || 120;
+  const autoScroll = document.getElementById('autoScroll').checked;
+  const ts = history.ts;
+
+  if (ts.length === 0) {
+    SERIES_CFG.forEach((s, i) => { chartDatasets[i].data = []; });
+    chart.update('none');
+    return;
+  }
+
+  // Compute x range
+  let xMin, xMax;
+  if (viewMode === 'rolling') {
+    xMax = ts[ts.length - 1];
+    if (autoScroll) {
+      xMin = Math.max(ts[0], xMax - windowSec);
+    } else {
+      xMin = ts[0];
+      xMax = ts[ts.length - 1];
+    }
+  } else {
+    xMin = ts[0];
+    xMax = ts[ts.length - 1];
+  }
+
+  // Slice to visible window (for performance)
+  let startIdx = 0, endIdx = ts.length - 1;
+  if (viewMode === 'rolling' && autoScroll) {
+    startIdx = Math.max(0, ts.findIndex(t => t >= xMin));
+  }
+  // Further trim to maxPts
+  const totalVisible = endIdx - startIdx + 1;
+  if (totalVisible > maxPts) {
+    startIdx = endIdx - maxPts + 1;
+  }
+
+  SERIES_CFG.forEach((s, i) => {
+    const arr = history[s.key];
+    const slice = [];
+    for (let j = startIdx; j <= endIdx; j++) {
+      slice.push({ x: ts[j], y: arr[j] });
+    }
+    chartDatasets[i].data = slice;
+  });
+
+  chart.options.scales.x.min = xMin;
+  chart.options.scales.x.max = xMax;
+  chart.update('none');
+}
+
+function clearChart() {
+  Object.keys(history).forEach(k => { history[k] = []; });
+  updateChart();
+}
+
+function toggleSeries(key) {
+  const idx = SERIES_CFG.findIndex(s => s.key === key);
+  if (idx < 0) return;
+  chartDatasets[idx].hidden = !chartDatasets[idx].hidden;
+  chart.update('none');
+}
+
+function setViewMode(mode) {
+  viewMode = mode;
+  updateChart();
+}
+
+// ---------------------------------------------------------------------------
+// WebSocket
+// ---------------------------------------------------------------------------
+function connectWS() {
+  if (ws && ws.readyState <= 1) return;
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const url = `${proto}://${location.host}/ws`;
+  ws = new WebSocket(url);
+
+  ws.onopen = () => {
+    wsConnected = true;
+    setWsDot('ok', 'WS Connected');
+    clearTimeout(wsReconnectTimer);
+  };
+
+  ws.onmessage = evt => {
+    let msg;
+    try { msg = JSON.parse(evt.data); } catch { return; }
+    handleMsg(msg);
+  };
+
+  ws.onerror = () => {};
+
+  ws.onclose = () => {
+    wsConnected = false;
+    setWsDot('warn', 'WS Reconnecting...');
+    wsReconnectTimer = setTimeout(connectWS, 2000);
+  };
+}
+
+function setWsDot(state, label) {
+  const dot = document.getElementById('wsDot');
+  const lbl = document.getElementById('wsLabel');
+  dot.className = 'ws-dot' + (state === 'ok' ? ' ok' : state === 'warn' ? ' warn' : '');
+  lbl.textContent = label;
+}
+
+// ---------------------------------------------------------------------------
+// Message handling
+// ---------------------------------------------------------------------------
+function handleMsg(msg) {
+  if (msg.type === 'ping') return;
+
+  if (msg.type === 'status') {
+    serialConnected = msg.connected;
+    updateConnUI(msg.connected, msg.port, msg.baud);
+    if (msg.csv_logging) showCsvPill(true);
+    return;
+  }
+
+  if (msg.type === 'connected') {
+    serialConnected = true;
+    updateConnUI(true, msg.port, msg.baud);
+    return;
+  }
+
+  if (msg.type === 'disconnected') {
+    serialConnected = false;
+    updateConnUI(false, '', 0);
+    return;
+  }
+
+  if (msg.type === 'handshake_ok') {
+    setPill('connPill', 'Connected', 'connected');
+    return;
+  }
+
+  if (msg.type === 'handshake_fail') {
+    setPill('connPill', 'Wrong Port?', 'warning');
+    appendLog('No valid HeatsinkLab telemetry detected. Wrong port?', 'warn');
+    return;
+  }
+
+  if (msg.type === 'log') {
+    appendLog(msg.text);
+    return;
+  }
+
+  if (msg.type === 'telemetry') {
+    updateTelemetry(msg);
+    pushHistory(msg);
+    updateChart();
+    return;
+  }
+
+  if (msg.type === 'cfg') {
+    applyCfg(msg);
+    return;
+  }
+}
+
+function updateConnUI(connected, port, baud) {
+  document.getElementById('btnConnect').disabled = connected;
+  document.getElementById('btnDisconnect').disabled = !connected;
+  document.getElementById('btnCsvStart').disabled = !connected;
+  if (connected) {
+    setPill('connPill', `${port} @ ${baud}`, 'connected');
+  } else {
+    setPill('connPill', 'Disconnected', '');
+    showCsvPill(false);
+    document.getElementById('btnCsvStop').disabled = true;
+  }
+}
+
+function setPill(id, text, cls) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.className = 'status-pill' + (cls ? ' ' + cls : '');
+}
+
+function showCsvPill(on, name) {
+  const el = document.getElementById('csvPill');
+  el.style.display = on ? '' : 'none';
+  if (name) el.textContent = 'CSV: ' + name;
+  document.getElementById('btnCsvStart').disabled = on || !serialConnected;
+  document.getElementById('btnCsvStop').disabled = !on;
+}
+
+function updateTelemetry(d) {
+  const fmt = (v, dec=2) => v !== undefined && v !== null ? Number(v).toFixed(dec) : '-';
+  document.getElementById('tRaw').textContent = fmt(d.raw_temp);
+  document.getElementById('tTemp').textContent = fmt(d.temp);
+  document.getElementById('tSmooth').textContent = fmt(d.smooth);
+  document.getElementById('tSP').textContent = fmt(d.sp);
+  document.getElementById('tEffSP').textContent = fmt(d.effsp);
+  document.getElementById('tPWM').textContent = fmt(d.pwm, 0);
+  document.getElementById('tP').textContent = fmt(d.p_term);
+  document.getElementById('tI').textContent = fmt(d.i_term);
+  document.getElementById('tD').textContent = fmt(d.d_term);
+  document.getElementById('tOut').textContent = fmt(d.pid_out);
+  document.getElementById('tBias').textContent = fmt(d.bias);
+  document.getElementById('tSPBias').textContent = fmt(d.spbias);
+  document.getElementById('tFan').textContent = fmt(d.fan_speed, 1);
+  document.getElementById('tFanPWM').textContent = fmt(d.fan_pwm, 0);
+  document.getElementById('tMode').textContent = d.ctrl_mode || '-';
+  document.getElementById('tState').textContent = d.ctrl_state || '-';
+  document.getElementById('tManPWM').textContent = fmt(d.manpwm, 0);
+  document.getElementById('tHoldPWM').textContent = fmt(d.holdpwm);
+  document.getElementById('tEnterProg').textContent = fmt(d.enter_prog, 1);
+  document.getElementById('tExitProg').textContent = fmt(d.exit_prog, 1);
+  document.getElementById('tAbsErr').textContent = fmt(d.abs_err);
+  document.getElementById('tRun').textContent = d.run_state || '-';
+  document.getElementById('tFanInv').textContent = d.fan_inv === '1' ? 'Yes' : 'No';
+}
+
+function pushHistory(d) {
+  const maxPts = parseInt(document.getElementById('maxPts').value) || 5000;
+  const lastT = history.ts.length ? history.ts[history.ts.length - 1] : -0.5;
+  history.ts.push(lastT + 0.5);
+  history.raw_temp.push(d.raw_temp);
+  history.temp.push(d.temp);
+  history.smooth.push(d.smooth);
+  history.sp.push(d.sp);
+  history.pwm.push(d.pwm);
+  history.p_term.push(d.p_term);
+  history.i_term.push(d.i_term);
+  history.d_term.push(d.d_term);
+  history.pid_out.push(d.pid_out);
+  history.holdpwm.push(d.holdpwm);
+  history.enter_prog.push(d.enter_prog);
+  history.exit_prog.push(d.exit_prog);
+  history.fan_pwm.push(d.fan_pwm);
+
+  const trim = Math.max(100, Math.min(200000, maxPts));
+  if (history.ts.length > trim * 1.1) {
+    const drop = history.ts.length - trim;
+    Object.keys(history).forEach(k => history[k].splice(0, drop));
+  }
+}
+
+function applyCfg(c) {
+  const set = (id, val) => { if (val !== undefined) document.getElementById(id).value = val; };
+  set('pKP', c.kp); set('pKI', c.ki); set('pKD', c.kd); set('pBIAS', c.bias);
+  set('pSPBIAS', c.spbias); set('pSP', c.sp); set('pALPHA', c.alpha);
+  set('pMAXSTEP', c.maxstep); set('pENTERCNT', c.entercnt); set('pEXITCNT', c.exitcnt);
+  set('pFAN', c.fan); set('pMANPWM', c.manpwm);
+  if (c.fan_inv !== undefined) document.getElementById('fanInv').checked = c.fan_inv === '1';
+  if (c.ctrl_mode) setModeUI(c.ctrl_mode);
+  // Sync sliders
+  ['SPBIAS','SP','ALPHA','MAXSTEP','ENTERCNT','EXITCNT','FAN','MANPWM'].forEach(syncSlider);
+  saveState();
+}
+
+// ---------------------------------------------------------------------------
+// API calls
+// ---------------------------------------------------------------------------
+async function api(path, method='GET', body=null) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  try {
+    const r = await fetch(path, opts);
+    return await r.json();
+  } catch (e) {
+    console.error(e);
+    return { ok: false, msg: String(e) };
+  }
+}
+
+async function refreshPorts() {
+  const data = await api('/api/ports');
+  const sel = document.getElementById('portSel');
+  const prev = sel.value;
+  sel.innerHTML = '';
+  (data.ports || []).forEach(p => {
+    const o = document.createElement('option');
+    o.value = p.device;
+    o.textContent = `${p.device} — ${p.description}`;
+    sel.appendChild(o);
+  });
+  if (prev) sel.value = prev;
+}
+
+async function connect() {
+  const port = document.getElementById('portSel').value;
+  const baud = parseInt(document.getElementById('baudSel').value);
+  if (!port) { alert('Select a port first.'); return; }
+  const r = await api('/api/connect', 'POST', { port, baud });
+  if (!r.ok) { alert('Connect failed: ' + r.msg); return; }
+  appendLog(`Connecting to ${port} @ ${baud}...`);
+}
+
+async function disconnect() {
+  await api('/api/disconnect', 'POST');
+}
+
+async function sendCmd(cmd) {
+  if (!serialConnected) { alert('Not connected.'); return; }
+  appendLog('→ ' + cmd, 'sent');
+  await api('/api/command', 'POST', { command: cmd });
+}
+
+function setParam(key) {
+  const val = document.getElementById('p' + key).value.trim();
+  if (!val) { alert('Enter a value for ' + key); return; }
+  sendCmd(`SET ${key} ${val}`);
+  saveState();
+}
+
+function setMode(mode) {
+  currentMode = mode;
+  setModeUI(mode);
+  sendCmd('SET MODE ' + mode);
+  saveState();
+}
+
+function setModeUI(mode) {
+  currentMode = mode;
+  ['AUTO','MANUAL','SMART'].forEach(m => {
+    document.getElementById('mode' + m).classList.toggle('active', m === mode);
+  });
+}
+
+function setFanInv() {
+  const val = document.getElementById('fanInv').checked ? '1' : '0';
+  sendCmd('SET FANINV ' + val);
+}
+
+function applyAll() {
+  ['KP','KI','KD','BIAS','SPBIAS','SP','ALPHA','MAXSTEP','ENTERCNT','EXITCNT','FAN','MANPWM'].forEach(setParam);
+  setFanInv();
+  sendCmd('SET MODE ' + currentMode);
+  saveState();
+}
+
+async function startCsv() {
+  const r = await api('/api/csv/start', 'POST');
+  if (!r.ok) { alert('CSV error: ' + r.msg); return; }
+  const name = r.msg.split(/[\\/]/).pop();
+  showCsvPill(true, name.slice(0, 20));
+  appendLog('CSV logging started: ' + r.msg);
+}
+
+async function stopCsv() {
+  const r = await api('/api/csv/stop', 'POST');
+  showCsvPill(false);
+  if (r.path) appendLog('CSV logging stopped: ' + r.path);
+}
+
+// ---------------------------------------------------------------------------
+// Sliders
+// ---------------------------------------------------------------------------
+const SLIDER_CFG = {
+  SPBIAS:   { min: -200, max: 200, step: 0.5,   fmt: v => v.toFixed(2) },
+  SP:       { min: -20,  max: 400, step: 0.5,   fmt: v => v.toFixed(2) },
+  ALPHA:    { min: 0.001,max: 1.0, step: 0.001, fmt: v => v.toFixed(3) },
+  MAXSTEP:  { min: 0,    max: 255, step: 1,     fmt: v => Math.round(v).toString() },
+  ENTERCNT: { min: 1,    max: 400, step: 1,     fmt: v => Math.round(v).toString() },
+  EXITCNT:  { min: 1,    max: 400, step: 1,     fmt: v => Math.round(v).toString() },
+  FAN:      { min: 0,    max: 100, step: 0.5,   fmt: v => v.toFixed(1) },
+  MANPWM:   { min: 0,    max: 255, step: 0.5,   fmt: v => v.toFixed(2) },
+};
+
+function syncSlider(key) {
+  const cfg = SLIDER_CFG[key];
+  if (!cfg) return;
+  const entry = document.getElementById('p' + key);
+  const slider = document.getElementById('s' + key);
+  let v = parseFloat(entry.value);
+  if (isNaN(v)) v = (cfg.min + cfg.max) / 2;
+  v = Math.max(cfg.min, Math.min(cfg.max, v));
+  entry.value = cfg.fmt(v);
+  slider.value = v;
+}
+
+function sliderToEntry(key) {
+  const cfg = SLIDER_CFG[key];
+  if (!cfg) return;
+  const v = parseFloat(document.getElementById('s' + key).value);
+  document.getElementById('p' + key).value = cfg.fmt(v);
+}
+
+// ---------------------------------------------------------------------------
+// Log
+// ---------------------------------------------------------------------------
+const MAX_LOG = 1500;
+let logLines = 0;
+
+function classifyLog(text) {
+  if (/T=|PWM=|PID|TEMP|MODE|STATE/i.test(text)) return 'telem';
+  if (/error|fail|wrong/i.test(text)) return 'error';
+  if (/warn|timeout/i.test(text)) return 'warn';
+  if (/SET |GET |CMD/i.test(text)) return 'sent';
+  return 'info';
+}
+
+function appendLog(text, cls) {
+  const box = document.getElementById('logBox');
+  const now = new Date();
+  const ts = now.toTimeString().slice(0,8);
+  const line = document.createElement('div');
+  const type = cls || classifyLog(text);
+  line.className = 'log-line ' + type;
+  line.innerHTML = `<span class="log-time">${ts}</span><span class="log-text">${text.replace(/</g,'&lt;')}</span>`;
+  box.appendChild(line);
+  logLines++;
+  while (logLines > MAX_LOG) { box.removeChild(box.firstChild); logLines--; }
+  document.getElementById('logCount').textContent = logLines + ' lines';
+  if (document.getElementById('logAutoScroll').checked) box.scrollTop = box.scrollHeight;
+}
+
+function clearLog() {
+  document.getElementById('logBox').innerHTML = '';
+  logLines = 0;
+  document.getElementById('logCount').textContent = '0 lines';
+}
+
+// Resize handle
+(function() {
+  const handle = document.getElementById('logResizeHandle');
+  const area   = document.getElementById('logArea');
+  let dragging = false, startY = 0, startH = 0;
+  handle.addEventListener('mousedown', e => {
+    dragging = true; startY = e.clientY; startH = area.offsetHeight;
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'ns-resize';
+  });
+  window.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const delta = startY - e.clientY; // drag up = bigger log
+    const chartArea = document.querySelector('.chart-area');
+    const maxLogH = window.innerHeight - chartArea.getBoundingClientRect().top - 150 - 20;
+    const newH = Math.max(80, Math.min(maxLogH, startH + delta));
+    area.style.height = newH + 'px';
+    resizeChart();
+  });
+  window.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+  });
+})();
+
+// ---------------------------------------------------------------------------
+// State persistence
+// ---------------------------------------------------------------------------
+async function saveState() {
+  const s = {};
+  ['KP','KI','KD','BIAS','SPBIAS','SP','ALPHA','MAXSTEP','ENTERCNT','EXITCNT','FAN','MANPWM'].forEach(k => {
+    s[k.toLowerCase()] = document.getElementById('p' + k).value;
+  });
+  s.ctrl_mode = currentMode;
+  s.fan_inv = document.getElementById('fanInv').checked ? '1' : '0';
+  await api('/api/state', 'POST', s);
+}
+
+async function loadState() {
+  const s = await api('/api/state');
+  const set = (id, key) => { if (s[key] !== undefined) document.getElementById(id).value = s[key]; };
+  set('pKP','kp'); set('pKI','ki'); set('pKD','kd'); set('pBIAS','bias');
+  set('pSPBIAS','spbias'); set('pSP','sp'); set('pALPHA','alpha');
+  set('pMAXSTEP','maxstep'); set('pENTERCNT','entercnt'); set('pEXITCNT','exitcnt');
+  set('pFAN','fan'); set('pMANPWM','manpwm');
+  if (s.ctrl_mode) setModeUI(s.ctrl_mode);
+  if (s.fan_inv !== undefined) document.getElementById('fanInv').checked = s.fan_inv === '1';
+  ['SPBIAS','SP','ALPHA','MAXSTEP','ENTERCNT','EXITCNT','FAN','MANPWM'].forEach(syncSlider);
+}
+
+// ---------------------------------------------------------------------------
+// Init
+// ---------------------------------------------------------------------------
+async function init() {
+  await refreshPorts();
+  await loadState();
+  connectWS();
+
+  // Restore status from server
+  const status = await api('/api/status');
+  if (status.connected) {
+    updateConnUI(true, status.port, status.baud);
+    if (status.csv_logging) showCsvPill(true);
+  }
+}
+
+init();
+</script>
+</body>
+</html>
