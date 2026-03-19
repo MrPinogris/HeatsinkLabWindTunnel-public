@@ -1,6 +1,6 @@
 .pio/
 .vscode/
 logs/
-*.json
+pid_gui_state.json
 __pycache__/
 *.pyc
