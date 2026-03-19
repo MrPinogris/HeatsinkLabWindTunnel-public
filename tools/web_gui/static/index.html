@@ -67,14 +67,36 @@
     gap: 12px;
     flex-shrink: 0;
   }
-  .content { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
-  .chart-area {
-    flex: 1;
-    padding: 12px 12px 0 12px;
-    min-height: 150px;
+  .content { flex: 1; display: flex; flex-direction: column; overflow-y: auto; min-width: 0; }
+  .chart-settings {
+    flex-shrink: 0;
+    padding: 8px 12px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
     display: flex;
     flex-direction: column;
+    gap: 6px;
   }
+  .chart-area {
+    height: 420px;
+    min-height: 200px;
+    flex-shrink: 0;
+    padding: 12px 12px 0 12px;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+  .chart-resize-handle {
+    height: 6px;
+    cursor: ns-resize;
+    background: transparent;
+    border-bottom: 1px solid transparent;
+    margin: 0 -12px;
+    flex-shrink: 0;
+    transition: border-color .15s;
+    order: 999;
+  }
+  .chart-resize-handle:hover { border-bottom-color: var(--accent); }
   .chart-wrap {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -103,7 +125,7 @@
   canvas#chart { position: absolute; inset: 0; }
   .log-area {
     height: 220px;
-    min-height: 80px;
+    min-height: 130px;
     flex-shrink: 0;
     padding: 0 12px 12px;
     display: flex;
@@ -451,50 +473,52 @@
     <!-- Main content -->
     <div class="content">
 
+      <!-- Chart settings (outside chart box) -->
+      <div class="chart-settings">
+        <div class="chart-controls">
+          <div class="radio-group">
+            <label><input type="radio" name="viewMode" value="rolling" checked onchange="setViewMode('rolling')"> Rolling</label>
+            <label><input type="radio" name="viewMode" value="full" onchange="setViewMode('full')"> Full</label>
+          </div>
+          <label style="display:flex;align-items:center;gap:4px;">
+            <input type="checkbox" id="autoScroll" checked onchange="updateChart()">
+            Auto-scroll
+          </label>
+          <label style="display:flex;align-items:center;gap:4px;min-width:0;">
+            Window&nbsp;
+            <input type="text" id="windowSec" value="120" style="width:55px;" onchange="updateChart()">s
+          </label>
+          <label style="display:flex;align-items:center;gap:4px;min-width:0;">
+            Max pts&nbsp;
+            <input type="text" id="maxPts" value="5000" style="width:60px;">
+          </label>
+          <button class="small" onclick="clearChart()">Clear</button>
+        </div>
+        <div class="series-checks">
+          <label class="series-check"><input type="checkbox" onchange="toggleSeries('raw_temp')"><span class="swatch" style="background:#94a3b8"></span><span>Raw Temp</span></label>
+          <label class="series-check"><input type="checkbox" onchange="toggleSeries('temp')"><span class="swatch" style="background:#60a5fa"></span><span>Temp</span></label>
+          <label class="series-check"><input type="checkbox" checked onchange="toggleSeries('smooth')"><span class="swatch" style="background:#34d399"></span><span>Smooth</span></label>
+          <label class="series-check"><input type="checkbox" checked onchange="toggleSeries('sp')"><span class="swatch" style="background:#f97316"></span><span>SP</span></label>
+          <label class="series-check"><input type="checkbox" checked onchange="toggleSeries('pwm')"><span class="swatch" style="background:#a78bfa"></span><span>PWM</span></label>
+          <label class="series-check"><input type="checkbox" onchange="toggleSeries('fan_pwm')"><span class="swatch" style="background:#f472b6"></span><span>Fan PWM</span></label>
+          <label class="series-check"><input type="checkbox" onchange="toggleSeries('p_term')"><span class="swatch" style="background:#fbbf24"></span><span>P Term</span></label>
+          <label class="series-check"><input type="checkbox" onchange="toggleSeries('i_term')"><span class="swatch" style="background:#fb923c"></span><span>I Term</span></label>
+          <label class="series-check"><input type="checkbox" onchange="toggleSeries('d_term')"><span class="swatch" style="background:#e879f9"></span><span>D Term</span></label>
+          <label class="series-check"><input type="checkbox" onchange="toggleSeries('pid_out')"><span class="swatch" style="background:#38bdf8"></span><span>PID Out</span></label>
+          <label class="series-check"><input type="checkbox" onchange="toggleSeries('holdpwm')"><span class="swatch" style="background:#4ade80"></span><span>Hold PWM</span></label>
+          <label class="series-check"><input type="checkbox" onchange="toggleSeries('enter_prog')"><span class="swatch" style="background:#a3e635"></span><span>Enter %</span></label>
+          <label class="series-check"><input type="checkbox" onchange="toggleSeries('exit_prog')"><span class="swatch" style="background:#facc15"></span><span>Exit %</span></label>
+        </div>
+      </div>
+
       <!-- Chart area -->
-      <div class="chart-area">
+      <div class="chart-area" id="chartArea">
         <div class="chart-wrap">
-          <div class="chart-controls">
-            <div class="radio-group">
-              <label><input type="radio" name="viewMode" value="rolling" checked onchange="setViewMode('rolling')"> Rolling</label>
-              <label><input type="radio" name="viewMode" value="full" onchange="setViewMode('full')"> Full</label>
-            </div>
-            <label style="display:flex;align-items:center;gap:4px;">
-              <input type="checkbox" id="autoScroll" checked onchange="updateChart()">
-              Auto-scroll
-            </label>
-            <label style="display:flex;align-items:center;gap:4px;min-width:0;">
-              Window&nbsp;
-              <input type="text" id="windowSec" value="120" style="width:55px;" onchange="updateChart()">s
-            </label>
-            <label style="display:flex;align-items:center;gap:4px;min-width:0;">
-              Max pts&nbsp;
-              <input type="text" id="maxPts" value="5000" style="width:60px;">
-            </label>
-            <button class="small" onclick="clearChart()">Clear</button>
-          </div>
-
-          <!-- Series toggles -->
-          <div class="series-checks" style="margin-bottom:8px;">
-            <label class="series-check"><input type="checkbox" checked onchange="toggleSeries('raw_temp')"><span class="swatch" style="background:#94a3b8"></span><span>Raw Temp</span></label>
-            <label class="series-check"><input type="checkbox" checked onchange="toggleSeries('temp')"><span class="swatch" style="background:#60a5fa"></span><span>Temp</span></label>
-            <label class="series-check"><input type="checkbox" checked onchange="toggleSeries('smooth')"><span class="swatch" style="background:#34d399"></span><span>Smooth</span></label>
-            <label class="series-check"><input type="checkbox" checked onchange="toggleSeries('sp')"><span class="swatch" style="background:#f97316"></span><span>SP</span></label>
-            <label class="series-check"><input type="checkbox" checked onchange="toggleSeries('pwm')"><span class="swatch" style="background:#a78bfa"></span><span>PWM</span></label>
-            <label class="series-check"><input type="checkbox" onchange="toggleSeries('fan_pwm')"><span class="swatch" style="background:#f472b6"></span><span>Fan PWM</span></label>
-            <label class="series-check"><input type="checkbox" onchange="toggleSeries('p_term')"><span class="swatch" style="background:#fbbf24"></span><span>P Term</span></label>
-            <label class="series-check"><input type="checkbox" onchange="toggleSeries('i_term')"><span class="swatch" style="background:#fb923c"></span><span>I Term</span></label>
-            <label class="series-check"><input type="checkbox" onchange="toggleSeries('d_term')"><span class="swatch" style="background:#e879f9"></span><span>D Term</span></label>
-            <label class="series-check"><input type="checkbox" onchange="toggleSeries('pid_out')"><span class="swatch" style="background:#38bdf8"></span><span>PID Out</span></label>
-            <label class="series-check"><input type="checkbox" onchange="toggleSeries('holdpwm')"><span class="swatch" style="background:#4ade80"></span><span>Hold PWM</span></label>
-            <label class="series-check"><input type="checkbox" onchange="toggleSeries('enter_prog')"><span class="swatch" style="background:#a3e635"></span><span>Enter %</span></label>
-            <label class="series-check"><input type="checkbox" onchange="toggleSeries('exit_prog')"><span class="swatch" style="background:#facc15"></span><span>Exit %</span></label>
-          </div>
-
           <div class="canvas-container">
             <canvas id="chart"></canvas>
           </div>
         </div>
+        <div class="chart-resize-handle" id="chartResizeHandle"></div>
       </div>
 
       <!-- Log -->
@@ -1038,26 +1062,48 @@ function clearLog() {
 
 // Resize handle
 (function() {
-  const handle = document.getElementById('logResizeHandle');
-  const area   = document.getElementById('logArea');
-  let dragging = false, startY = 0, startH = 0;
-  handle.addEventListener('mousedown', e => {
-    dragging = true; startY = e.clientY; startH = area.offsetHeight;
+  // Log resize
+  const logHandle = document.getElementById('logResizeHandle');
+  const logArea   = document.getElementById('logArea');
+  let logDrag = false, logStartY = 0, logStartH = 0;
+  logHandle.addEventListener('mousedown', e => {
+    logDrag = true; logStartY = e.clientY; logStartH = logArea.offsetHeight;
     document.body.style.userSelect = 'none';
     document.body.style.cursor = 'ns-resize';
   });
   window.addEventListener('mousemove', e => {
-    if (!dragging) return;
-    const delta = startY - e.clientY; // drag up = bigger log
-    const chartArea = document.querySelector('.chart-area');
-    const maxLogH = window.innerHeight - chartArea.getBoundingClientRect().top - 150 - 20;
-    const newH = Math.max(80, Math.min(maxLogH, startH + delta));
-    area.style.height = newH + 'px';
+    if (!logDrag) return;
+    const delta = logStartY - e.clientY;
+    const newH = Math.max(130, logStartH + delta);
+    logArea.style.height = newH + 'px';
     resizeChart();
   });
   window.addEventListener('mouseup', () => {
-    if (!dragging) return;
-    dragging = false;
+    if (!logDrag) return;
+    logDrag = false;
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+  });
+
+  // Chart resize
+  const chartHandle = document.getElementById('chartResizeHandle');
+  const chartArea   = document.getElementById('chartArea');
+  let chartDrag = false, chartStartY = 0, chartStartH = 0;
+  chartHandle.addEventListener('mousedown', e => {
+    chartDrag = true; chartStartY = e.clientY; chartStartH = chartArea.offsetHeight;
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'ns-resize';
+  });
+  window.addEventListener('mousemove', e => {
+    if (!chartDrag) return;
+    const delta = e.clientY - chartStartY;
+    const newH = Math.max(200, chartStartH + delta);
+    chartArea.style.height = newH + 'px';
+    resizeChart();
+  });
+  window.addEventListener('mouseup', () => {
+    if (!chartDrag) return;
+    chartDrag = false;
     document.body.style.userSelect = '';
     document.body.style.cursor = '';
   });
