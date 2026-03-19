@@ -79,6 +79,7 @@ float lastSmoothForSlope = NAN;
 float smartEnterProgressPct = 0.0f;
 float smartExitProgressPct = 0.0f;
 int fanPwmApplied = 255;
+float eqPwm = 0.0f;  // Converging equilibrium PWM estimate
 
 // ---------------- INA226 METINGEN ----------------
 float supplyVoltage = 12.0f; // Set to your PSU voltage
@@ -721,6 +722,11 @@ void loop() {
     setPWM(pwm);
   }
 
+  // Equilibrium PWM: EMA update only when temperature is near-stable
+  if (absSlope < 0.3f && controlEnabled) {
+    eqPwm = 0.05f * (float)pwm + 0.95f * eqPwm;
+  }
+
   float pTerm = 0.0f;
   float iTerm = 0.0f;
   float dTerm = 0.0f;
@@ -734,9 +740,9 @@ void loop() {
     stateText = "HOLD";
   }
 
-  Serial.printf("Rawtemp %.2f C | Temp: %.2f C | Smooth: %.2f C | PWM: %d | P: %.2f | I: %.2f | D: %.2f | OUT: %.2f | BIAS: %.2f | SPBIAS: %.2f | SP: %.2f | EFFSP: %.2f | FAN: %.1f | FANPWM: %d | MODE: %s | STATE: %s | MANPWM: %.2f | HOLDPWM: %.2f | ENTPROG: %.1f | EXTPROG: %.1f | EABS: %.2f | RUN: %s | FANINV: %d | V: %.3f V | I: %.4f A | W: %.3f W\n",
+  Serial.printf("Rawtemp %.2f C | Temp: %.2f C | Smooth: %.2f C | PWM: %d | P: %.2f | I: %.2f | D: %.2f | OUT: %.2f | BIAS: %.2f | SPBIAS: %.2f | SP: %.2f | EFFSP: %.2f | FAN: %.1f | FANPWM: %d | MODE: %s | STATE: %s | MANPWM: %.2f | HOLDPWM: %.2f | ENTPROG: %.1f | EXTPROG: %.1f | EABS: %.2f | RUN: %s | FANINV: %d | V: %.3f V | I: %.4f A | W: %.3f W | EQPWM: %.1f\n",
                 rawTemp, t, tSmooth, pwm, pTerm, iTerm, dTerm, pidOut, pidBias, setpointBias, setpoint, effectiveSetpoint, fanSpeedPercent, fanPwmApplied,
                 modeToText(controlMode), stateText, manualPwmTarget, smartHoldPwmTarget, smartEnterProgressPct, smartExitProgressPct, absError,
                 controlEnabled ? "ON" : "OFF", fanPwmInverted ? 1 : 0,
-                inaVoltage, inaCurrent, inaPower);
+                inaVoltage, inaCurrent, inaPower, eqPwm);
 }

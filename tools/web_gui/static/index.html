@@ -271,6 +271,7 @@
     <div class="header-title">HeatsinkLab PID Tuner</div>
     <span id="connPill" class="status-pill">Disconnected</span>
     <span id="csvPill" class="status-pill" style="display:none">CSV: On</span>
+    <button class="small" id="btnTesterMode" onclick="enterTesterMode()" style="margin-left:8px;">&#128300; Tester</button>
     <span style="display:flex;align-items:center;gap:4px;margin-left:auto;">
       <span class="ws-dot" id="wsDot"></span>
       <span id="wsLabel" style="font-size:11px;color:var(--text-muted)">WebSocket</span>
@@ -305,6 +306,34 @@
         <div style="margin-top:8px;" class="flex-gap">
           <button class="success small" id="btnCsvStart" onclick="startCsv()" disabled>Start CSV</button>
           <button class="small" id="btnCsvStop" onclick="stopCsv()" disabled>Stop CSV</button>
+        </div>
+        <!-- Virtual speed bar (only shown when connected to VIRTUAL) -->
+        <div id="virtualBar" style="display:none;margin-top:10px;padding:8px;background:var(--surface2);border:1px solid var(--accent);border-radius:var(--radius);">
+          <div style="color:var(--accent);font-size:11px;font-weight:600;margin-bottom:6px;">⚡ VIRTUAL MODE</div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+            <span style="font-size:11px;color:var(--text-muted);">Speed:</span>
+            <button class="small" onclick="setVirtSpeed(1)">1×</button>
+            <button class="small" onclick="setVirtSpeed(5)">5×</button>
+            <button class="small" onclick="setVirtSpeed(10)">10×</button>
+            <button class="small" onclick="setVirtSpeed(20)">20×</button>
+            <button class="small" onclick="setVirtSpeed(50)">50×</button>
+            <span id="virtSpeedLabel" style="font-size:11px;color:var(--text-muted);">1×</span>
+          </div>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Physics:</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 8px;">
+            <label style="font-size:11px;color:var(--text-muted);">Heater power (W)
+              <input type="number" id="vPhysHeater" value="15" step="1" style="width:100%;margin-top:2px;" onchange="applyVirtPhysics()">
+            </label>
+            <label style="font-size:11px;color:var(--text-muted);">Thermal mass (J/°C)
+              <input type="number" id="vPhysMass" value="62.5" step="1" style="width:100%;margin-top:2px;" onchange="applyVirtPhysics()">
+            </label>
+            <label style="font-size:11px;color:var(--text-muted);">Cooling coeff (/s/°C)
+              <input type="number" id="vPhysCooling" value="0.002" step="0.0005" style="width:100%;margin-top:2px;" onchange="applyVirtPhysics()">
+            </label>
+            <label style="font-size:11px;color:var(--text-muted);">Ambient (°C)
+              <input type="number" id="vPhysAmbient" value="20" step="1" style="width:100%;margin-top:2px;" onchange="applyVirtPhysics()">
+            </label>
+          </div>
         </div>
       </div>
 
@@ -465,10 +494,107 @@
           <div class="telem-item"><span class="telem-label">Abs Err °C</span><span class="telem-value warn" id="tAbsErr">-</span></div>
           <div class="telem-item"><span class="telem-label">Run State</span><span class="telem-value" id="tRun">-</span></div>
           <div class="telem-item"><span class="telem-label">Fan Inv</span><span class="telem-value" id="tFanInv">-</span></div>
+          <div class="telem-item"><span class="telem-label">Eq PWM</span><span class="telem-value" id="tEqPWM">-</span></div>
+          <div class="telem-item"><span class="telem-label">Power W</span><span class="telem-value" id="tPowerW">-</span></div>
         </div>
       </div>
 
+      <!-- Heatsink Characteristics -->
+      <div class="section">
+        <div class="section-title">Heatsink</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 8px;margin-bottom:8px;">
+          <div class="telem-item"><span class="telem-label">R_th (°C/W)</span><span class="telem-value" id="hRth">—</span></div>
+          <div class="telem-item"><span class="telem-label">k (W/°C)</span><span class="telem-value" id="hK">—</span></div>
+          <div class="telem-item"><span class="telem-label">T_max (°C)</span><span class="telem-value warn" id="hTmax">—</span></div>
+          <div class="telem-item"><span class="telem-label">τ (s)</span><span class="telem-value" id="hTau">—</span></div>
+        </div>
+        <label style="font-size:11px;color:var(--text-muted);">Ambient (°C)
+          <input type="number" id="ambientInput" value="20" step="1" style="width:100%;margin-top:2px;" onchange="setAmbient(this.value)">
+        </label>
+      </div>
+
     </div><!-- /sidebar -->
+
+    <!-- Tester Panel -->
+    <div id="testerPanel" class="sidebar" style="display:none;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <span style="font-size:14px;font-weight:700;color:var(--accent);">TESTER MODE</span>
+        <button class="small danger" onclick="exitTesterMode()">Exit</button>
+      </div>
+
+      <!-- Setup -->
+      <div class="section">
+        <div class="section-title">Setup</div>
+        <div class="row">
+          <label style="min-width:100px;">Ambient (°C)</label>
+          <input type="number" id="tAmbient" value="20" step="1" style="width:80px;" onchange="setAmbient(this.value)">
+        </div>
+        <div class="row">
+          <label style="min-width:100px;">Fan speed (%)</label>
+          <input type="range" id="tFanSlider" min="0" max="100" step="1" value="0" oninput="document.getElementById('tFanNum').value=this.value;" style="flex:1;">
+          <input type="number" id="tFanNum" value="0" min="0" max="100" step="1" style="width:55px;" oninput="document.getElementById('tFanSlider').value=this.value;">
+          <button class="small" onclick="setTesterFan()">Set</button>
+        </div>
+        <div style="margin-top:8px;">
+          <label style="display:block;margin-bottom:4px;color:var(--text-muted);font-size:12px;">Test temperatures (°C)</label>
+          <div id="tTempList" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;"></div>
+          <div style="display:flex;gap:4px;">
+            <input type="number" id="tTempInput" value="50" step="5" style="width:70px;">
+            <button class="small primary" onclick="addTestTemp()">+ Add</button>
+            <button class="small danger" onclick="clearTestTemps()">Clear</button>
+          </div>
+        </div>
+        <div class="row" style="margin-top:8px;">
+          <label style="min-width:100px;">Soak time (s)</label>
+          <input type="number" id="tSoakTime" value="60" min="10" max="600" step="10" style="width:80px;">
+        </div>
+      </div>
+
+      <!-- Controls -->
+      <div style="display:flex;gap:8px;">
+        <button class="primary" id="btnTestStart" onclick="startTest()">&#9654; Start Test</button>
+        <button class="danger" id="btnTestStop" onclick="stopTest()" disabled>&#9632; Stop</button>
+      </div>
+
+      <!-- Live status -->
+      <div class="section" id="testerLive" style="display:none;">
+        <div class="section-title">Live</div>
+        <div class="telemetry-grid">
+          <div class="telem-item"><span class="telem-label">Step</span><span class="telem-value" id="tLiveStep">-</span></div>
+          <div class="telem-item"><span class="telem-label">SP</span><span class="telem-value" id="tLiveSP">-</span></div>
+          <div class="telem-item"><span class="telem-label">Temp</span><span class="telem-value highlight" id="tLiveTemp">-</span></div>
+          <div class="telem-item"><span class="telem-label">Eq PWM</span><span class="telem-value" id="tLiveEqPWM">-</span></div>
+          <div class="telem-item"><span class="telem-label">Power</span><span class="telem-value" id="tLivePower">-</span></div>
+          <div class="telem-item"><span class="telem-label">R_th</span><span class="telem-value" id="tLiveRth">-</span></div>
+        </div>
+        <div style="margin-top:6px;padding:6px 8px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);font-size:12px;color:var(--accent);" id="tLiveStatus">Idle</div>
+      </div>
+
+      <!-- Results -->
+      <div class="section" id="testerResults" style="display:none;">
+        <div class="section-title">Results</div>
+        <div style="overflow-x:auto;">
+          <table id="tResultsTable" style="width:100%;border-collapse:collapse;font-size:11px;">
+            <thead>
+              <tr style="color:var(--text-muted);">
+                <th style="text-align:left;padding:3px 4px;border-bottom:1px solid var(--border);">SP</th>
+                <th style="text-align:right;padding:3px 4px;border-bottom:1px solid var(--border);">Temp</th>
+                <th style="text-align:right;padding:3px 4px;border-bottom:1px solid var(--border);">Amb</th>
+                <th style="text-align:right;padding:3px 4px;border-bottom:1px solid var(--border);">EqPWM</th>
+                <th style="text-align:right;padding:3px 4px;border-bottom:1px solid var(--border);">W</th>
+                <th style="text-align:right;padding:3px 4px;border-bottom:1px solid var(--border);">R_th</th>
+                <th style="text-align:right;padding:3px 4px;border-bottom:1px solid var(--border);">k</th>
+              </tr>
+            </thead>
+            <tbody id="tResultsBody"></tbody>
+          </table>
+        </div>
+        <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
+          <button class="small success" onclick="downloadResultsCsv()">&#8595; Results CSV</button>
+          <button class="small" onclick="downloadRawCsv()">&#8595; Raw CSV</button>
+        </div>
+      </div>
+    </div>
 
     <!-- Main content -->
     <div class="content">
@@ -501,13 +627,20 @@
           <label class="series-check"><input type="checkbox" checked onchange="toggleSeries('sp')"><span class="swatch" style="background:#f97316"></span><span>SP</span></label>
           <label class="series-check"><input type="checkbox" checked onchange="toggleSeries('pwm')"><span class="swatch" style="background:#a78bfa"></span><span>PWM</span></label>
           <label class="series-check"><input type="checkbox" onchange="toggleSeries('fan_pwm')"><span class="swatch" style="background:#f472b6"></span><span>Fan PWM</span></label>
-          <label class="series-check"><input type="checkbox" onchange="toggleSeries('p_term')"><span class="swatch" style="background:#fbbf24"></span><span>P Term</span></label>
-          <label class="series-check"><input type="checkbox" onchange="toggleSeries('i_term')"><span class="swatch" style="background:#fb923c"></span><span>I Term</span></label>
-          <label class="series-check"><input type="checkbox" onchange="toggleSeries('d_term')"><span class="swatch" style="background:#e879f9"></span><span>D Term</span></label>
-          <label class="series-check"><input type="checkbox" onchange="toggleSeries('pid_out')"><span class="swatch" style="background:#38bdf8"></span><span>PID Out</span></label>
           <label class="series-check"><input type="checkbox" onchange="toggleSeries('holdpwm')"><span class="swatch" style="background:#4ade80"></span><span>Hold PWM</span></label>
+          <label class="series-check"><input type="checkbox" onchange="toggleSeries('eq_pwm')"><span class="swatch" style="background:#f43f5e"></span><span>Eq PWM</span></label>
+          <label class="series-check"><input type="checkbox" onchange="toggleSeries('power_w')"><span class="swatch" style="background:#fde047"></span><span>Power W</span></label>
           <label class="series-check"><input type="checkbox" onchange="toggleSeries('enter_prog')"><span class="swatch" style="background:#a3e635"></span><span>Enter %</span></label>
           <label class="series-check"><input type="checkbox" onchange="toggleSeries('exit_prog')"><span class="swatch" style="background:#facc15"></span><span>Exit %</span></label>
+        </div>
+        <div style="margin-top:4px;">
+          <button class="small" id="btnPidDebug" onclick="togglePidDebug()">PID Debug: OFF</button>
+          <div id="pidDebugChecks" style="display:none;margin-top:4px;" class="series-checks">
+            <label class="series-check"><input type="checkbox" onchange="toggleSeries('p_term')"><span class="swatch" style="background:#fbbf24"></span><span>P Term</span></label>
+            <label class="series-check"><input type="checkbox" onchange="toggleSeries('i_term')"><span class="swatch" style="background:#fb923c"></span><span>I Term</span></label>
+            <label class="series-check"><input type="checkbox" onchange="toggleSeries('d_term')"><span class="swatch" style="background:#e879f9"></span><span>D Term</span></label>
+            <label class="series-check"><input type="checkbox" onchange="toggleSeries('pid_out')"><span class="swatch" style="background:#38bdf8"></span><span>PID Out</span></label>
+          </div>
         </div>
       </div>
 
@@ -553,7 +686,7 @@ let wsConnected = false;
 const history = {
   ts: [], raw_temp: [], temp: [], smooth: [], sp: [],
   pwm: [], p_term: [], i_term: [], d_term: [], pid_out: [],
-  holdpwm: [], enter_prog: [], exit_prog: [], fan_pwm: []
+  holdpwm: [], enter_prog: [], exit_prog: [], fan_pwm: [], eq_pwm: [], power_w: []
 };
 
 let viewMode = 'rolling';
@@ -564,8 +697,8 @@ let currentMode = 'AUTO';
 // Chart setup
 // ---------------------------------------------------------------------------
 const SERIES_CFG = [
-  { key: 'raw_temp',   label: 'Raw Temp',  color: '#94a3b8', yAxis: 'y'  },
-  { key: 'temp',       label: 'Temp',      color: '#60a5fa', yAxis: 'y'  },
+  { key: 'raw_temp',   label: 'Raw Temp',  color: '#94a3b8', yAxis: 'y',  hidden: true },
+  { key: 'temp',       label: 'Temp',      color: '#60a5fa', yAxis: 'y',  hidden: true },
   { key: 'smooth',     label: 'Smooth',    color: '#34d399', yAxis: 'y'  },
   { key: 'sp',         label: 'SP',        color: '#f97316', yAxis: 'y'  },
   { key: 'pwm',        label: 'PWM',       color: '#a78bfa', yAxis: 'y2' },
@@ -575,6 +708,8 @@ const SERIES_CFG = [
   { key: 'd_term',     label: 'D Term',    color: '#e879f9', yAxis: 'y2', hidden: true },
   { key: 'pid_out',    label: 'PID Out',   color: '#38bdf8', yAxis: 'y2', hidden: true },
   { key: 'holdpwm',   label: 'Hold PWM',  color: '#4ade80', yAxis: 'y2', hidden: true },
+  { key: 'eq_pwm',    label: 'Eq PWM',    color: '#f43f5e', yAxis: 'y2', hidden: true },
+  { key: 'power_w',   label: 'Power W',   color: '#fde047', yAxis: 'y2', hidden: true },
   { key: 'enter_prog', label: 'Enter %',   color: '#a3e635', yAxis: 'y2', hidden: true },
   { key: 'exit_prog',  label: 'Exit %',    color: '#facc15', yAxis: 'y2', hidden: true },
 ];
@@ -767,12 +902,15 @@ function handleMsg(msg) {
   if (msg.type === 'connected') {
     serialConnected = true;
     updateConnUI(true, msg.port, msg.baud);
+    if (msg.port === 'VIRTUAL') { document.getElementById('virtualBar').style.display = 'block'; loadVirtPhysics(); }
+    else document.getElementById('virtualBar').style.display = 'none';
     return;
   }
 
   if (msg.type === 'disconnected') {
     serialConnected = false;
     updateConnUI(false, '', 0);
+    document.getElementById('virtualBar').style.display = 'none';
     return;
   }
 
@@ -796,11 +934,17 @@ function handleMsg(msg) {
     updateTelemetry(msg);
     pushHistory(msg);
     updateChart();
+    if (testerActive) testerOnTelemetry(msg);
     return;
   }
 
   if (msg.type === 'cfg') {
     applyCfg(msg);
+    return;
+  }
+
+  if (msg.type === 'heatsink_chars') {
+    updateHeatsinkChars(msg);
     return;
   }
 }
@@ -857,6 +1001,8 @@ function updateTelemetry(d) {
   document.getElementById('tAbsErr').textContent = fmt(d.abs_err);
   document.getElementById('tRun').textContent = d.run_state || '-';
   document.getElementById('tFanInv').textContent = d.fan_inv === '1' ? 'Yes' : 'No';
+  document.getElementById('tEqPWM').textContent = fmt(d.eq_pwm, 1);
+  document.getElementById('tPowerW').textContent = fmt(d.power_w, 3) + ' W';
 }
 
 function pushHistory(d) {
@@ -876,6 +1022,8 @@ function pushHistory(d) {
   history.enter_prog.push(d.enter_prog);
   history.exit_prog.push(d.exit_prog);
   history.fan_pwm.push(d.fan_pwm);
+  history.eq_pwm.push(d.eq_pwm ?? 0);
+  history.power_w.push(d.power_w ?? 0);
 
   const trim = Math.max(100, Math.min(200000, maxPts));
   if (history.ts.length > trim * 1.1) {
@@ -937,6 +1085,40 @@ async function connect() {
 
 async function disconnect() {
   await api('/api/disconnect', 'POST');
+}
+
+function updateHeatsinkChars(d) {
+  document.getElementById('hRth').textContent  = d.r_th  != null ? d.r_th.toFixed(3)  : '—';
+  document.getElementById('hK').textContent    = d.k     != null ? d.k.toFixed(4)     : '—';
+  document.getElementById('hTmax').textContent = d.t_max != null ? d.t_max.toFixed(1) : '—';
+  document.getElementById('hTau').textContent  = d.tau   != null ? d.tau.toFixed(1)   : '—';
+}
+
+async function setAmbient(val) {
+  await api('/api/ambient', 'POST', { ambient: parseFloat(val) });
+}
+
+async function setVirtSpeed(s) {
+  await api('/api/virtual/speed', 'POST', { speed: s });
+  document.getElementById('virtSpeedLabel').textContent = s + '×';
+}
+
+async function applyVirtPhysics() {
+  await api('/api/virtual/physics', 'POST', {
+    heater_power:  parseFloat(document.getElementById('vPhysHeater').value),
+    thermal_mass:  parseFloat(document.getElementById('vPhysMass').value),
+    cooling_coeff: parseFloat(document.getElementById('vPhysCooling').value),
+    ambient:       parseFloat(document.getElementById('vPhysAmbient').value),
+  });
+}
+
+async function loadVirtPhysics() {
+  const r = await api('/api/virtual/physics', 'GET');
+  if (!r.ok) return;
+  document.getElementById('vPhysHeater').value  = r.heater_power;
+  document.getElementById('vPhysMass').value    = r.thermal_mass;
+  document.getElementById('vPhysCooling').value = r.cooling_coeff;
+  document.getElementById('vPhysAmbient').value = r.ambient;
 }
 
 async function sendCmd(cmd) {
@@ -1151,6 +1333,233 @@ async function init() {
 }
 
 init();
+
+// ---------------------------------------------------------------------------
+// PID Debug toggle
+// ---------------------------------------------------------------------------
+let pidDebugOn = false;
+function togglePidDebug() {
+  pidDebugOn = !pidDebugOn;
+  document.getElementById('pidDebugChecks').style.display = pidDebugOn ? '' : 'none';
+  document.getElementById('btnPidDebug').textContent = 'PID Debug: ' + (pidDebugOn ? 'ON' : 'OFF');
+}
+
+// ---------------------------------------------------------------------------
+// Tester Mode
+// ---------------------------------------------------------------------------
+let testerActive = false;
+let testTemps = [];
+let testResults = [];
+let testRunning = false;
+let testStepIdx = 0;
+let soakTimer = 0;
+let soakCountdown = 0;
+let soakInterval = null;
+let lastEnterProg = 0;
+
+function enterTesterMode() {
+  testerActive = true;
+  document.querySelector('.sidebar').style.display = 'none';
+  document.getElementById('testerPanel').style.display = 'flex';
+  document.getElementById('btnTesterMode').style.display = 'none';
+  // Set tester-friendly series: show Smooth, SP, PWM, EqPWM, Power W; hide others
+  const show = ['smooth','sp','pwm','eq_pwm','power_w'];
+  SERIES_CFG.forEach((s, i) => {
+    chartDatasets[i].hidden = !show.includes(s.key);
+  });
+  chart.update('none');
+}
+
+function exitTesterMode() {
+  if (testRunning) stopTest();
+  testerActive = false;
+  document.querySelector('.sidebar').style.display = '';
+  document.getElementById('testerPanel').style.display = 'none';
+  document.getElementById('btnTesterMode').style.display = '';
+}
+
+function addTestTemp() {
+  const v = parseFloat(document.getElementById('tTempInput').value);
+  if (isNaN(v) || v < 0 || v > 400) { alert('Invalid temperature'); return; }
+  testTemps.push(v);
+  renderTempList();
+}
+
+function removeTestTemp(idx) {
+  testTemps.splice(idx, 1);
+  renderTempList();
+}
+
+function clearTestTemps() {
+  testTemps = [];
+  renderTempList();
+}
+
+function renderTempList() {
+  const el = document.getElementById('tTempList');
+  el.innerHTML = '';
+  testTemps.forEach((t, i) => {
+    const chip = document.createElement('span');
+    chip.style.cssText = 'display:inline-flex;align-items:center;gap:3px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:11px;';
+    chip.innerHTML = `${t}°C <span onclick="removeTestTemp(${i})" style="cursor:pointer;color:var(--red);font-weight:700;margin-left:2px;">×</span>`;
+    el.appendChild(chip);
+  });
+}
+
+function setTesterFan() {
+  const pct = parseFloat(document.getElementById('tFanNum').value) || 0;
+  sendCmd('SET FAN ' + pct.toFixed(1));
+}
+
+async function startTest() {
+  if (!serialConnected) { alert('Not connected.'); return; }
+  if (testTemps.length === 0) { alert('Add at least one test temperature.'); return; }
+  testResults = [];
+  testStepIdx = 0;
+  testRunning = true;
+  document.getElementById('btnTestStart').disabled = true;
+  document.getElementById('btnTestStop').disabled = false;
+  document.getElementById('testerLive').style.display = '';
+  document.getElementById('testerResults').style.display = '';
+  document.getElementById('tResultsBody').innerHTML = '';
+  appendLog('[TESTER] Starting test sequence: ' + testTemps.join('°, ') + '°C', 'info');
+  await startCsv();
+  sendCmd('SET MODE SMART');
+  sendCmd('SET RUN ON');
+  goToStep(0);
+}
+
+function goToStep(idx) {
+  if (idx >= testTemps.length) {
+    finishTest();
+    return;
+  }
+  testStepIdx = idx;
+  const sp = testTemps[idx];
+  clearInterval(soakInterval);
+  soakCountdown = 0;
+  soakTimer = 0;
+  document.getElementById('tLiveStep').textContent = `${idx+1} / ${testTemps.length}`;
+  document.getElementById('tLiveSP').textContent = sp + '°C';
+  document.getElementById('tLiveStatus').textContent = 'Heating to ' + sp + '°C...';
+  appendLog(`[TESTER] Step ${idx+1}: SP = ${sp}°C`, 'info');
+  sendCmd('SET SP ' + sp);
+}
+
+function testerOnTelemetry(d) {
+  if (!testRunning) return;
+  const fmt2 = v => (v != null ? Number(v).toFixed(2) : '-');
+  document.getElementById('tLiveTemp').textContent = fmt2(d.smooth) + '°C';
+  document.getElementById('tLiveEqPWM').textContent = fmt2(d.eq_pwm);
+  document.getElementById('tLivePower').textContent = fmt2(d.power_w) + ' W';
+  const amb = parseFloat(document.getElementById('tAmbient').value) || 20;
+  const deltaT = (d.smooth ?? 0) - amb;
+  const r_th = (d.power_w > 0.05 && deltaT > 2) ? (deltaT / d.power_w) : null;
+  document.getElementById('tLiveRth').textContent = r_th != null ? r_th.toFixed(3) : '-';
+
+  const ep = d.enter_prog ?? 0;
+  lastEnterProg = ep;
+
+  if (ep >= 100 && soakCountdown === 0) {
+    // HOLD entered — start soak countdown
+    const soakTime = parseInt(document.getElementById('tSoakTime').value) || 60;
+    soakCountdown = soakTime;
+    document.getElementById('tLiveStatus').textContent = `Soaking... ${soakCountdown}s left`;
+    soakInterval = setInterval(() => {
+      if (!testRunning) { clearInterval(soakInterval); return; }
+      // If HOLD was exited, reset
+      if (lastEnterProg < 100) {
+        clearInterval(soakInterval);
+        soakCountdown = 0;
+        document.getElementById('tLiveStatus').textContent = 'HOLD lost — waiting for re-entry...';
+        return;
+      }
+      soakCountdown--;
+      document.getElementById('tLiveStatus').textContent = `Soaking... ${soakCountdown}s left`;
+      if (soakCountdown <= 0) {
+        clearInterval(soakInterval);
+        recordResult(d, amb, r_th);
+      }
+    }, 1000);
+  }
+}
+
+function recordResult(d, amb, r_th) {
+  const k = r_th != null ? (1.0 / r_th) : null;
+  const result = {
+    sp: testTemps[testStepIdx],
+    temp: d.smooth,
+    ambient: amb,
+    eq_pwm: d.eq_pwm,
+    power_w: d.power_w,
+    r_th: r_th,
+    k: k,
+  };
+  testResults.push(result);
+  appendLog(`[TESTER] Step ${testStepIdx+1} done: EqPWM=${(d.eq_pwm??0).toFixed(1)}, P=${(d.power_w??0).toFixed(2)}W, R_th=${r_th!=null?r_th.toFixed(3):'-'}`, 'info');
+  addResultRow(result);
+  soakCountdown = 0;
+  goToStep(testStepIdx + 1);
+}
+
+function addResultRow(r) {
+  const fmt = (v, d=2) => v != null ? Number(v).toFixed(d) : '-';
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td style="padding:3px 4px;border-bottom:1px solid var(--border);">${r.sp}°</td>
+    <td style="padding:3px 4px;border-bottom:1px solid var(--border);text-align:right;">${fmt(r.temp)}</td>
+    <td style="padding:3px 4px;border-bottom:1px solid var(--border);text-align:right;">${fmt(r.ambient,1)}</td>
+    <td style="padding:3px 4px;border-bottom:1px solid var(--border);text-align:right;">${fmt(r.eq_pwm,1)}</td>
+    <td style="padding:3px 4px;border-bottom:1px solid var(--border);text-align:right;">${fmt(r.power_w,2)}</td>
+    <td style="padding:3px 4px;border-bottom:1px solid var(--border);text-align:right;">${fmt(r.r_th,3)}</td>
+    <td style="padding:3px 4px;border-bottom:1px solid var(--border);text-align:right;">${fmt(r.k,3)}</td>
+  `;
+  document.getElementById('tResultsBody').appendChild(tr);
+}
+
+async function finishTest() {
+  testRunning = false;
+  document.getElementById('btnTestStart').disabled = false;
+  document.getElementById('btnTestStop').disabled = true;
+  document.getElementById('tLiveStatus').textContent = '✓ Test complete!';
+  appendLog('[TESTER] Test complete. ' + testResults.length + ' steps recorded.', 'info');
+  await stopCsv();
+}
+
+function stopTest() {
+  clearInterval(soakInterval);
+  soakCountdown = 0;
+  testRunning = false;
+  document.getElementById('btnTestStart').disabled = false;
+  document.getElementById('btnTestStop').disabled = true;
+  document.getElementById('tLiveStatus').textContent = 'Stopped.';
+  appendLog('[TESTER] Test stopped.', 'warn');
+  stopCsv();
+}
+
+function downloadResultsCsv() {
+  if (testResults.length === 0) { alert('No results yet.'); return; }
+  const lines = ['SP_degC,Temp_actual,Ambient_degC,EqPWM,Power_W,R_th,k'];
+  testResults.forEach(r => {
+    const fmt = (v, d=3) => v != null ? Number(v).toFixed(d) : '';
+    lines.push([r.sp, fmt(r.temp), fmt(r.ambient,1), fmt(r.eq_pwm,1), fmt(r.power_w,3), fmt(r.r_th,4), fmt(r.k,4)].join(','));
+  });
+  const blob = new Blob([lines.join('\n')], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'heatsink_results_' + new Date().toISOString().slice(0,16).replace(/[T:]/g,'-') + '.csv';
+  a.click();
+}
+
+async function downloadRawCsv() {
+  const r = await fetch('/api/csv/download');
+  if (!r.ok) { alert('No CSV file available.'); return; }
+  const blob = await r.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'raw_data.csv';
+  a.click();
+}
 </script>
 </body>
 </html>
