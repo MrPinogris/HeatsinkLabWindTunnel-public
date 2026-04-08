@@ -69,6 +69,7 @@ HERE = Path(__file__).parent
 PROJECT_ROOT = HERE.parent.parent
 LOGS_DIR = PROJECT_ROOT / "logs"
 STATE_PATH = HERE / "pid_gui_state.json"
+PRESETS_PATH = HERE / "presets.json"
 STATIC_DIR = HERE / "static"
 
 # ---------------------------------------------------------------------------
@@ -99,6 +100,9 @@ class AppState:
         self.csv_writer = None
         self.csv_path: Path | None = None
         self.csv_start_monotonic = 0.0
+        self.csv_columns: list[str] | None = None   # None = all columns
+        self.pending_run_id: str = ""
+        self.pending_heatsink_id: str = ""
 
         self.websockets: list[WebSocket] = []
         self.ws_lock = asyncio.Lock()
@@ -412,6 +416,7 @@ class AppState:
                         "abs_error_c": abs_err,
                         "run_state": run_state,
                         "fan_inverted": 1 if fan_inv == "1" else 0,
+                        "event": "",
                     })
                     if self.csv_file:
                         self.csv_file.flush()
@@ -451,7 +456,7 @@ class AppState:
         "pid_bias", "setpoint_bias_c", "setpoint_c", "effective_setpoint_c",
         "fan_speed_pct", "fan_pwm_raw", "mode", "state", "manual_pwm_cmd",
         "hold_pwm", "enter_progress_pct", "exit_progress_pct", "abs_error_c",
-        "run_state", "fan_inverted",
+        "run_state", "fan_inverted", "event",
     ]
 
     def start_csv_logging(self) -> tuple[bool, str]:
@@ -464,7 +469,14 @@ class AppState:
         path = LOGS_DIR / f"serial_{stamp}.csv"
         try:
             self.csv_file = open(path, "w", newline="", encoding="utf-8")
-            self.csv_writer = csv.DictWriter(self.csv_file, fieldnames=self.CSV_FIELDNAMES)
+            # Write metadata comment header
+            start_iso = dt.datetime.now(dt.timezone.utc).astimezone().isoformat(timespec="seconds")
+            self.csv_file.write(f"# schema_version: 1\n")
+            self.csv_file.write(f"# run_id: {self.pending_run_id}\n")
+            self.csv_file.write(f"# heatsink_id: {self.pending_heatsink_id}\n")
+            self.csv_file.write(f"# start_time: {start_iso}\n")
+            fieldnames = self.csv_columns or self.CSV_FIELDNAMES
+            self.csv_writer = csv.DictWriter(self.csv_file, fieldnames=fieldnames, extrasaction="ignore")
             self.csv_writer.writeheader()
             self.csv_file.flush()
         except OSError as exc:
@@ -487,6 +499,7 @@ class AppState:
         self.csv_file = None
         self.csv_writer = None
         self.csv_path = None
+        self.csv_columns = None  # reset for next session
 
 
 # ---------------------------------------------------------------------------
@@ -670,6 +683,22 @@ class VirtualMCU:
             self._state._handle_line(line)
 
 
+# ---------------------------------------------------------------------------
+# Preset helpers
+# ---------------------------------------------------------------------------
+def _load_presets() -> dict:
+    if not PRESETS_PATH.exists():
+        return {}
+    try:
+        return json.loads(PRESETS_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _save_presets(data: dict) -> None:
+    PRESETS_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
 # Singleton
 state = AppState()
 
@@ -820,6 +849,95 @@ async def get_ui_state() -> JSONResponse:
 async def save_ui_state(payload: dict) -> JSONResponse:
     state.save_state({str(k): str(v) for k, v in payload.items()})
     return JSONResponse({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# Preset endpoints
+# ---------------------------------------------------------------------------
+@app.get("/api/presets")
+async def list_presets() -> JSONResponse:
+    return JSONResponse({"presets": list(_load_presets().keys())})
+
+
+@app.post("/api/preset/save")
+async def save_preset(payload: dict) -> JSONResponse:
+    name = str(payload.get("name", "")).strip()
+    if not name:
+        return JSONResponse({"ok": False, "msg": "Name required"})
+    data = _load_presets()
+    data[name] = {k: v for k, v in payload.items() if k != "name"}
+    _save_presets(data)
+    return JSONResponse({"ok": True, "name": name})
+
+
+@app.post("/api/preset/load")
+async def load_preset(payload: dict) -> JSONResponse:
+    name = str(payload.get("name", "")).strip()
+    data = _load_presets()
+    if name not in data:
+        return JSONResponse({"ok": False, "msg": "Not found"}, status_code=404)
+    return JSONResponse({"ok": True, "preset": data[name]})
+
+
+@app.delete("/api/preset/{name}")
+async def delete_preset(name: str) -> JSONResponse:
+    data = _load_presets()
+    if name not in data:
+        return JSONResponse({"ok": False, "msg": "Not found"}, status_code=404)
+    del data[name]
+    _save_presets(data)
+    return JSONResponse({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# CSV metadata / column selection / event markers
+# ---------------------------------------------------------------------------
+@app.post("/api/csv/meta")
+async def set_csv_meta(payload: dict) -> JSONResponse:
+    state.pending_run_id = str(payload.get("run_id", ""))
+    state.pending_heatsink_id = str(payload.get("heatsink_id", ""))
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/csv/columns")
+async def set_csv_columns(payload: dict) -> JSONResponse:
+    cols = payload.get("columns")
+    if not isinstance(cols, list) or not cols:
+        state.csv_columns = None
+        return JSONResponse({"ok": True, "columns": state.CSV_FIELDNAMES})
+    valid = [c for c in cols if c in state.CSV_FIELDNAMES]
+    if not valid:
+        return JSONResponse({"ok": False, "msg": "No valid columns"})
+    state.csv_columns = valid
+    return JSONResponse({"ok": True, "columns": valid})
+
+
+@app.post("/api/csv/event")
+async def csv_event(payload: dict) -> JSONResponse:
+    label = str(payload.get("label", "marker"))[:64]
+    ts_iso = dt.datetime.now(dt.timezone.utc).astimezone().isoformat(timespec="milliseconds")
+    ts_float = time.time()
+    if state.csv_logging and state.csv_writer and state.last_telemetry:
+        t = state.last_telemetry
+        elapsed = max(0.0, time.monotonic() - state.csv_start_monotonic)
+        cols = state.csv_columns or state.CSV_FIELDNAMES
+        row = {c: "" for c in cols}
+        row.update({
+            "timestamp_iso": ts_iso,
+            "elapsed_s": f"{elapsed:.3f}",
+            "raw_temp_c": t.get("raw_temp", ""),
+            "temp_filtered_c": t.get("temp", ""),
+            "temp_smooth_c": t.get("smooth", ""),
+            "event": label,
+        })
+        try:
+            state.csv_writer.writerow(row)
+            if state.csv_file:
+                state.csv_file.flush()
+        except OSError:
+            pass
+    await state.broadcast({"type": "marker", "label": label, "ts": ts_float})
+    return JSONResponse({"ok": True, "label": label})
 
 
 @app.get("/api/status")

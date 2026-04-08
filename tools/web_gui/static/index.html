@@ -261,6 +261,27 @@
     .main { flex-direction: column; }
     .sidebar { width: 100%; min-width: 0; height: auto; max-height: 50vh; }
   }
+  button.toggle-active { background: rgba(234,179,8,.2); border-color: var(--yellow); color: var(--yellow); }
+  body.student-mode [data-expert="true"] { display: none !important; }
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+  .modal-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; max-width: 500px; width: 90%; max-height: 80vh; overflow-y: auto; }
+  .modal-anchor { position: relative; display: inline-flex; align-items: stretch; }
+  .modal-anchor > .modal-box { width: 480px; max-width: 90vw; flex-shrink: 0; }
+  .modal-anchor.help-open > .modal-box { border-radius: var(--radius) 0 0 var(--radius); }
+  #excelHelpPane { position: absolute; left: 100%; top: 0; height: 100%; width: 0; overflow: hidden; background: var(--surface); border: 1px solid var(--border); border-left: none; border-radius: 0 var(--radius) var(--radius) 0; transition: width .25s ease; z-index: 1; }
+  #excelHelpPane .help-inner { width: 380px; padding: 16px; overflow-y: auto; height: 100%; box-sizing: border-box; }
+  .modal-title { font-size: 14px; font-weight: 700; color: var(--accent); margin-bottom: 12px; }
+  .col-group-title { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin: 8px 0 4px; }
+  .col-check { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 12px; cursor: pointer; }
+  .excel-box { background: #0a0a0d; border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; font-family: 'Consolas','Courier New',monospace; font-size: 10px; color: #a0aec0; white-space: pre-wrap; max-height: 120px; overflow-y: auto; margin-top: 8px; }
+  .help-modal-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; max-width: 740px; width: 95%; max-height: 90vh; overflow-y: auto; }
+  .help-step { display: flex; gap: 14px; align-items: flex-start; padding: 14px 0; border-bottom: 1px solid var(--border); }
+  .help-step:last-child { border-bottom: none; }
+  .help-step-num { flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: #000; font-weight: 700; font-size: 13px; display: flex; align-items: center; justify-content: center; }
+  .help-step-desc { font-size: 13px; margin-bottom: 8px; line-height: 1.5; color: var(--text); }
+  .help-step-img { width: 100%; border-radius: var(--radius); border: 1px solid var(--border); display: block; }
+  #cursorTooltip { position: absolute; pointer-events: none; background: rgba(26,26,30,.95); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 10px; font-size: 11px; color: var(--text); z-index: 20; display: none; min-width: 140px; max-width: 220px; }
+  #cursorLine { position: absolute; pointer-events: none; width: 1px; background: rgba(255,255,255,.3); top: 0; display: none; z-index: 19; }
 </style>
 </head>
 <body>
@@ -271,7 +292,9 @@
     <div class="header-title">HeatsinkLab PID Tuner</div>
     <span id="connPill" class="status-pill">Disconnected</span>
     <span id="csvPill" class="status-pill" style="display:none">CSV: On</span>
-    <button class="small" id="btnTesterMode" onclick="enterTesterMode()" style="margin-left:8px;">&#128300; Tester</button>
+    <button class="small" id="btnTesterMode" onclick="enterTesterMode()" style="margin-left:8px;" title="Open automated heatsink characterisation mode">&#128300; Tester</button>
+    <button class="small" id="btnAddMarker" onclick="addMarker()" style="display:none;" title="Add a phase marker annotation to the chart and CSV">&#128204; Marker</button>
+    <button class="small" id="btnExpertMode" onclick="toggleExpertMode()" title="Student mode hides advanced parameters to simplify the interface">&#127891; Student</button>
     <span style="display:flex;align-items:center;gap:4px;margin-left:auto;">
       <span class="ws-dot" id="wsDot"></span>
       <span id="wsLabel" style="font-size:11px;color:var(--text-muted)">WebSocket</span>
@@ -288,24 +311,32 @@
         <div class="section-title">Serial Connection</div>
         <div class="row">
           <label>Port</label>
-          <select id="portSel"></select>
-          <button class="small" onclick="refreshPorts()">&#8635;</button>
+          <select id="portSel" title="Select serial port or VIRTUAL to use the built-in simulator"></select>
+          <button class="small" onclick="refreshPorts()" title="Refresh list of available serial ports">&#8635;</button>
         </div>
         <div class="row">
           <label>Baud</label>
-          <select id="baudSel">
+          <select id="baudSel" title="Baud rate — must match firmware (default 115200)">
             <option>9600</option><option>19200</option><option>38400</option>
             <option>57600</option><option selected>115200</option><option>230400</option>
             <option>460800</option><option>921600</option>
           </select>
         </div>
+        <div class="row">
+          <label>Run ID</label>
+          <input type="text" id="runId" placeholder="e.g. run_001" title="Optional run identifier written into the CSV header">
+        </div>
+        <div class="row">
+          <label>Heatsink</label>
+          <input type="text" id="heatsinkId" placeholder="e.g. HS_finned_A" title="Heatsink identifier written into the CSV header">
+        </div>
         <div class="flex-gap" style="margin-top:6px;">
-          <button class="primary" id="btnConnect" onclick="connect()">Connect</button>
-          <button class="danger" id="btnDisconnect" onclick="disconnect()" disabled>Disconnect</button>
+          <button class="primary" id="btnConnect" onclick="connect()" title="Open serial connection to the HeatsinkLab device">Connect</button>
+          <button class="danger" id="btnDisconnect" onclick="disconnect()" disabled title="Close the serial connection">Disconnect</button>
         </div>
         <div style="margin-top:8px;" class="flex-gap">
-          <button class="success small" id="btnCsvStart" onclick="startCsv()" disabled>Start CSV</button>
-          <button class="small" id="btnCsvStop" onclick="stopCsv()" disabled>Stop CSV</button>
+          <button class="success small" id="btnCsvStart" onclick="startCsv()" disabled title="Choose columns and start recording telemetry to a CSV file">Start CSV</button>
+          <button class="small" id="btnCsvStop" onclick="stopCsv()" disabled title="Stop CSV recording and flush the file">Stop CSV</button>
         </div>
         <!-- Virtual speed bar (only shown when connected to VIRTUAL) -->
         <div id="virtualBar" style="display:none;margin-top:10px;padding:8px;background:var(--surface2);border:1px solid var(--accent);border-radius:var(--radius);">
@@ -344,99 +375,99 @@
         <div id="paramRows">
           <!-- KP -->
           <div class="param-row">
-            <label>KP</label>
-            <input type="text" id="pKP" value="8.0">
-            <button class="small" onclick="setParam('KP')">Set</button>
+            <label title="Proportional gain — higher = faster response but more overshoot">KP</label>
+            <input type="text" id="pKP" value="8.0" title="Proportional gain">
+            <button class="small" onclick="setParam('KP')" title="Send KP to device">Set</button>
           </div>
           <!-- KI -->
           <div class="param-row">
-            <label>KI</label>
-            <input type="text" id="pKI" value="0.06">
-            <button class="small" onclick="setParam('KI')">Set</button>
+            <label title="Integral gain — eliminates steady-state error, too high causes oscillation">KI</label>
+            <input type="text" id="pKI" value="0.06" title="Integral gain">
+            <button class="small" onclick="setParam('KI')" title="Send KI to device">Set</button>
           </div>
           <!-- KD -->
           <div class="param-row">
-            <label>KD</label>
-            <input type="text" id="pKD" value="0.0">
-            <button class="small" onclick="setParam('KD')">Set</button>
+            <label title="Derivative gain — damps oscillation, sensitive to noise">KD</label>
+            <input type="text" id="pKD" value="0.0" title="Derivative gain">
+            <button class="small" onclick="setParam('KD')" title="Send KD to device">Set</button>
           </div>
           <!-- BIAS -->
-          <div class="param-row">
-            <label>BIAS</label>
-            <input type="text" id="pBIAS" value="0.0">
-            <button class="small" onclick="setParam('BIAS')">Set</button>
+          <div class="param-row" data-expert="true">
+            <label title="Feed-forward PWM offset added directly to PID output">BIAS</label>
+            <input type="text" id="pBIAS" value="0.0" title="Feed-forward PWM bias (-255 to 255)">
+            <button class="small" onclick="setParam('BIAS')" title="Send BIAS to device">Set</button>
           </div>
           <!-- SPBIAS -->
-          <div class="param-row">
-            <label>SPBIAS</label>
-            <input type="text" id="pSPBIAS" value="0.0" oninput="syncSlider('SPBIAS')">
-            <button class="small" onclick="setParam('SPBIAS')">Set</button>
+          <div class="param-row" data-expert="true">
+            <label title="Setpoint offset in °C — shifts the effective setpoint without changing the displayed SP">SPBIAS</label>
+            <input type="text" id="pSPBIAS" value="0.0" oninput="syncSlider('SPBIAS')" title="Setpoint bias in °C (-200 to 200)">
+            <button class="small" onclick="setParam('SPBIAS')" title="Send SPBIAS to device">Set</button>
           </div>
-          <div class="param-row-slider">
-            <input type="range" id="sSPBIAS" min="-200" max="200" step="0.5" value="0" oninput="sliderToEntry('SPBIAS')">
+          <div class="param-row-slider" data-expert="true">
+            <input type="range" id="sSPBIAS" min="-200" max="200" step="0.5" value="0" oninput="sliderToEntry('SPBIAS')" title="Setpoint bias slider">
           </div>
           <!-- SP -->
           <div class="param-row">
-            <label>SP</label>
-            <input type="text" id="pSP" value="70.0" oninput="syncSlider('SP')">
-            <button class="small" onclick="setParam('SP')">Set</button>
+            <label title="Target temperature setpoint in °C">SP</label>
+            <input type="text" id="pSP" value="70.0" oninput="syncSlider('SP')" title="Target temperature in °C (-20 to 400)">
+            <button class="small" onclick="setParam('SP')" title="Send SP to device">Set</button>
           </div>
           <div class="param-row-slider">
-            <input type="range" id="sSP" min="-20" max="400" step="0.5" value="70" oninput="sliderToEntry('SP')">
+            <input type="range" id="sSP" min="-20" max="400" step="0.5" value="70" oninput="sliderToEntry('SP')" title="Setpoint slider">
           </div>
           <!-- ALPHA -->
-          <div class="param-row">
-            <label>ALPHA</label>
-            <input type="text" id="pALPHA" value="0.25" oninput="syncSlider('ALPHA')">
-            <button class="small" onclick="setParam('ALPHA')">Set</button>
+          <div class="param-row" data-expert="true">
+            <label title="EMA smoothing factor for temperature filter (0=frozen, 1=no filter)">ALPHA</label>
+            <input type="text" id="pALPHA" value="0.25" oninput="syncSlider('ALPHA')" title="EMA alpha (0.001 to 1.0)">
+            <button class="small" onclick="setParam('ALPHA')" title="Send ALPHA to device">Set</button>
           </div>
-          <div class="param-row-slider">
-            <input type="range" id="sALPHA" min="0.001" max="1.0" step="0.001" value="0.25" oninput="sliderToEntry('ALPHA')">
+          <div class="param-row-slider" data-expert="true">
+            <input type="range" id="sALPHA" min="0.001" max="1.0" step="0.001" value="0.25" oninput="sliderToEntry('ALPHA')" title="Alpha slider">
           </div>
           <!-- MAXSTEP -->
-          <div class="param-row">
-            <label>MAXSTEP</label>
-            <input type="text" id="pMAXSTEP" value="15" oninput="syncSlider('MAXSTEP')">
-            <button class="small" onclick="setParam('MAXSTEP')">Set</button>
+          <div class="param-row" data-expert="true">
+            <label title="Maximum PWM change per control tick — limits heater ramp rate">MAXSTEP</label>
+            <input type="text" id="pMAXSTEP" value="15" oninput="syncSlider('MAXSTEP')" title="Max PWM step per tick (0 to 255)">
+            <button class="small" onclick="setParam('MAXSTEP')" title="Send MAXSTEP to device">Set</button>
           </div>
-          <div class="param-row-slider">
-            <input type="range" id="sMAXSTEP" min="0" max="255" step="1" value="15" oninput="sliderToEntry('MAXSTEP')">
+          <div class="param-row-slider" data-expert="true">
+            <input type="range" id="sMAXSTEP" min="0" max="255" step="1" value="15" oninput="sliderToEntry('MAXSTEP')" title="MAXSTEP slider">
           </div>
           <!-- ENTERCNT -->
-          <div class="param-row">
-            <label>ENTERCNT</label>
-            <input type="text" id="pENTERCNT" value="16" oninput="syncSlider('ENTERCNT')">
-            <button class="small" onclick="setParam('ENTERCNT')">Set</button>
+          <div class="param-row" data-expert="true">
+            <label title="Consecutive stable ticks required before SMART mode enters HOLD state">ENTERCNT</label>
+            <input type="text" id="pENTERCNT" value="16" oninput="syncSlider('ENTERCNT')" title="Enter count (1 to 400 ticks)">
+            <button class="small" onclick="setParam('ENTERCNT')" title="Send ENTERCNT to device">Set</button>
           </div>
-          <div class="param-row-slider">
-            <input type="range" id="sENTERCNT" min="1" max="400" step="1" value="16" oninput="sliderToEntry('ENTERCNT')">
+          <div class="param-row-slider" data-expert="true">
+            <input type="range" id="sENTERCNT" min="1" max="400" step="1" value="16" oninput="sliderToEntry('ENTERCNT')" title="ENTERCNT slider">
           </div>
           <!-- EXITCNT -->
-          <div class="param-row">
-            <label>EXITCNT</label>
-            <input type="text" id="pEXITCNT" value="8" oninput="syncSlider('EXITCNT')">
-            <button class="small" onclick="setParam('EXITCNT')">Set</button>
+          <div class="param-row" data-expert="true">
+            <label title="Consecutive out-of-band ticks required before SMART mode exits HOLD state">EXITCNT</label>
+            <input type="text" id="pEXITCNT" value="8" oninput="syncSlider('EXITCNT')" title="Exit count (1 to 400 ticks)">
+            <button class="small" onclick="setParam('EXITCNT')" title="Send EXITCNT to device">Set</button>
           </div>
-          <div class="param-row-slider">
-            <input type="range" id="sEXITCNT" min="1" max="400" step="1" value="8" oninput="sliderToEntry('EXITCNT')">
+          <div class="param-row-slider" data-expert="true">
+            <input type="range" id="sEXITCNT" min="1" max="400" step="1" value="8" oninput="sliderToEntry('EXITCNT')" title="EXITCNT slider">
           </div>
           <!-- FAN -->
           <div class="param-row">
-            <label>FAN</label>
-            <input type="text" id="pFAN" value="0" oninput="syncSlider('FAN')">
-            <button class="small" onclick="setParam('FAN')">Set</button>
+            <label title="Cooling fan speed command in percent (0 = off, 100 = full speed)">FAN %</label>
+            <input type="text" id="pFAN" value="0" oninput="syncSlider('FAN')" title="Fan speed 0–100%">
+            <button class="small" onclick="setParam('FAN')" title="Send FAN speed to device">Set</button>
           </div>
           <div class="param-row-slider">
-            <input type="range" id="sFAN" min="0" max="100" step="0.5" value="0" oninput="sliderToEntry('FAN')">
+            <input type="range" id="sFAN" min="0" max="100" step="0.5" value="0" oninput="sliderToEntry('FAN')" title="Fan speed slider">
           </div>
           <!-- MANPWM -->
           <div class="param-row">
-            <label>MANPWM</label>
-            <input type="text" id="pMANPWM" value="0.0" oninput="syncSlider('MANPWM')">
-            <button class="small" onclick="setParam('MANPWM')">Set</button>
+            <label title="Manual heater PWM value (0–255) — used when MODE = MANUAL">MANPWM</label>
+            <input type="text" id="pMANPWM" value="0.0" oninput="syncSlider('MANPWM')" title="Manual PWM 0–255">
+            <button class="small" onclick="setParam('MANPWM')" title="Send MANPWM to device">Set</button>
           </div>
           <div class="param-row-slider">
-            <input type="range" id="sMANPWM" min="0" max="255" step="0.5" value="0" oninput="sliderToEntry('MANPWM')">
+            <input type="range" id="sMANPWM" min="0" max="255" step="0.5" value="0" oninput="sliderToEntry('MANPWM')" title="Manual PWM slider">
           </div>
         </div>
 
@@ -444,26 +475,26 @@
         <div style="margin-top:8px;">
           <label style="display:block;margin-bottom:5px;">MODE</label>
           <div class="mode-btns">
-            <button class="mode-btn active" id="modeAUTO" onclick="setMode('AUTO')">AUTO</button>
-            <button class="mode-btn" id="modeMANUAL" onclick="setMode('MANUAL')">MANUAL</button>
-            <button class="mode-btn" id="modeSMART" onclick="setMode('SMART')">SMART</button>
+            <button class="mode-btn active" id="modeAUTO" onclick="setMode('AUTO')" title="AUTO: standard PID loop controls heater to reach setpoint">AUTO</button>
+            <button class="mode-btn" id="modeMANUAL" onclick="setMode('MANUAL')" title="MANUAL: heater runs at fixed MANPWM value — no PID">MANUAL</button>
+            <button class="mode-btn" id="modeSMART" onclick="setMode('SMART')" title="SMART: PID until stable, then holds the equilibrium PWM value">SMART</button>
           </div>
         </div>
 
         <!-- Fan inversion + heater -->
-        <div style="margin-top:8px;" class="row">
-          <input type="checkbox" id="fanInv" onchange="setFanInv()">
-          <label for="fanInv" style="min-width:auto;cursor:pointer;">Fan PWM Inverted</label>
+        <div style="margin-top:8px;" class="row" data-expert="true">
+          <input type="checkbox" id="fanInv" onchange="setFanInv()" title="Invert fan PWM polarity — enable if fan runs backwards">
+          <label for="fanInv" style="min-width:auto;cursor:pointer;" title="Invert fan PWM polarity — enable if fan runs backwards">Fan PWM Inverted</label>
         </div>
         <div class="flex-gap" style="margin-top:6px;">
-          <button class="success small" onclick="sendCmd('SET RUN ON')">Start Heater</button>
-          <button class="danger small" onclick="sendCmd('SET RUN OFF')">Stop Heater</button>
+          <button class="success small" onclick="sendCmd('SET RUN ON')" title="Enable the heater and control loop (SET RUN ON)">Start Heater</button>
+          <button class="danger small" onclick="sendCmd('SET RUN OFF')" title="Disable the heater and control loop (SET RUN OFF)">Stop Heater</button>
         </div>
 
         <!-- Bulk actions -->
         <div class="flex-gap" style="margin-top:10px;">
-          <button onclick="applyAll()">Apply All</button>
-          <button onclick="sendCmd('GET')">Get From ESP32</button>
+          <button onclick="applyAll()" title="Send all current parameter values to the device at once">Apply All</button>
+          <button onclick="sendCmd('GET')" title="Read the current configuration from the device">Get From ESP32</button>
         </div>
       </div>
 
@@ -477,24 +508,24 @@
           <div class="telem-item"><span class="telem-label">Setpoint °C</span><span class="telem-value" id="tSP">-</span></div>
           <div class="telem-item"><span class="telem-label">Eff. SP °C</span><span class="telem-value" id="tEffSP">-</span></div>
           <div class="telem-item"><span class="telem-label">PWM</span><span class="telem-value highlight" id="tPWM">-</span></div>
-          <div class="telem-item"><span class="telem-label">P Term</span><span class="telem-value" id="tP">-</span></div>
-          <div class="telem-item"><span class="telem-label">I Term</span><span class="telem-value" id="tI">-</span></div>
-          <div class="telem-item"><span class="telem-label">D Term</span><span class="telem-value" id="tD">-</span></div>
-          <div class="telem-item"><span class="telem-label">PID Out</span><span class="telem-value" id="tOut">-</span></div>
-          <div class="telem-item"><span class="telem-label">Bias</span><span class="telem-value" id="tBias">-</span></div>
-          <div class="telem-item"><span class="telem-label">SP Bias °C</span><span class="telem-value" id="tSPBias">-</span></div>
+          <div class="telem-item" data-expert="true"><span class="telem-label">P Term</span><span class="telem-value" id="tP">-</span></div>
+          <div class="telem-item" data-expert="true"><span class="telem-label">I Term</span><span class="telem-value" id="tI">-</span></div>
+          <div class="telem-item" data-expert="true"><span class="telem-label">D Term</span><span class="telem-value" id="tD">-</span></div>
+          <div class="telem-item" data-expert="true"><span class="telem-label">PID Out</span><span class="telem-value" id="tOut">-</span></div>
+          <div class="telem-item" data-expert="true"><span class="telem-label">Bias</span><span class="telem-value" id="tBias">-</span></div>
+          <div class="telem-item" data-expert="true"><span class="telem-label">SP Bias °C</span><span class="telem-value" id="tSPBias">-</span></div>
           <div class="telem-item"><span class="telem-label">Fan Speed %</span><span class="telem-value" id="tFan">-</span></div>
-          <div class="telem-item"><span class="telem-label">Fan PWM Raw</span><span class="telem-value" id="tFanPWM">-</span></div>
+          <div class="telem-item" data-expert="true"><span class="telem-label">Fan PWM Raw</span><span class="telem-value" id="tFanPWM">-</span></div>
           <div class="telem-item"><span class="telem-label">Mode</span><span class="telem-value" id="tMode">-</span></div>
           <div class="telem-item"><span class="telem-label">State</span><span class="telem-value" id="tState">-</span></div>
-          <div class="telem-item"><span class="telem-label">Man PWM</span><span class="telem-value" id="tManPWM">-</span></div>
-          <div class="telem-item"><span class="telem-label">Hold PWM</span><span class="telem-value" id="tHoldPWM">-</span></div>
-          <div class="telem-item"><span class="telem-label">Enter %</span><span class="telem-value" id="tEnterProg">-</span></div>
-          <div class="telem-item"><span class="telem-label">Exit %</span><span class="telem-value" id="tExitProg">-</span></div>
+          <div class="telem-item" data-expert="true"><span class="telem-label">Man PWM</span><span class="telem-value" id="tManPWM">-</span></div>
+          <div class="telem-item" data-expert="true"><span class="telem-label">Hold PWM</span><span class="telem-value" id="tHoldPWM">-</span></div>
+          <div class="telem-item" data-expert="true"><span class="telem-label">Enter %</span><span class="telem-value" id="tEnterProg">-</span></div>
+          <div class="telem-item" data-expert="true"><span class="telem-label">Exit %</span><span class="telem-value" id="tExitProg">-</span></div>
           <div class="telem-item"><span class="telem-label">Abs Err °C</span><span class="telem-value warn" id="tAbsErr">-</span></div>
           <div class="telem-item"><span class="telem-label">Run State</span><span class="telem-value" id="tRun">-</span></div>
-          <div class="telem-item"><span class="telem-label">Fan Inv</span><span class="telem-value" id="tFanInv">-</span></div>
-          <div class="telem-item"><span class="telem-label">Eq PWM</span><span class="telem-value" id="tEqPWM">-</span></div>
+          <div class="telem-item" data-expert="true"><span class="telem-label">Fan Inv</span><span class="telem-value" id="tFanInv">-</span></div>
+          <div class="telem-item" data-expert="true"><span class="telem-label">Eq PWM</span><span class="telem-value" id="tEqPWM">-</span></div>
           <div class="telem-item"><span class="telem-label">Power W</span><span class="telem-value" id="tPowerW">-</span></div>
         </div>
       </div>
@@ -508,9 +539,44 @@
           <div class="telem-item"><span class="telem-label">T_max (°C)</span><span class="telem-value warn" id="hTmax">—</span></div>
           <div class="telem-item"><span class="telem-label">τ (s)</span><span class="telem-value" id="hTau">—</span></div>
         </div>
-        <label style="font-size:11px;color:var(--text-muted);">Ambient (°C)
-          <input type="number" id="ambientInput" value="20" step="1" style="width:100%;margin-top:2px;" onchange="setAmbient(this.value)">
+        <label style="font-size:11px;color:var(--text-muted);" title="Room temperature in °C — used for thermal resistance calculations">Ambient (°C)
+          <input type="number" id="ambientInput" value="20" step="1" style="width:100%;margin-top:2px;" onchange="setAmbient(this.value)" title="Current ambient/room temperature in °C">
         </label>
+      </div>
+
+      <!-- Presets -->
+      <div class="section" id="presetsSection">
+        <div class="section-title">Presets</div>
+        <div class="row">
+          <select id="presetSel" style="flex:1;" title="Select a saved or built-in preset configuration">
+            <optgroup id="presetBuiltinGroup" label="Built-in"></optgroup>
+            <optgroup id="presetSavedGroup" label="Saved"></optgroup>
+          </select>
+        </div>
+        <div class="flex-gap" style="margin-top:6px;">
+          <button class="small primary" onclick="loadPreset()" title="Apply the selected preset to all parameter fields">Load</button>
+          <button class="small" onclick="savePreset()" title="Save the current parameter values as a named preset">Save Current</button>
+          <button class="small danger" onclick="deletePreset()" title="Delete the selected saved preset">Delete</button>
+        </div>
+      </div>
+
+      <!-- Performance Metrics -->
+      <div class="section" id="perfMetricsSection">
+        <div class="section-title">Performance Metrics</div>
+        <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;align-items:center;">
+          <button class="small primary" onclick="computeMetrics()" title="Compute step-response metrics from current chart history">Compute</button>
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;">
+            <input type="checkbox" id="autoComputeMetrics" checked title="Automatically compute metrics when setpoint changes by more than 2°C">
+            Auto on SP change
+          </label>
+        </div>
+        <div class="telemetry-grid">
+          <div class="telem-item"><span class="telem-label" title="Time from setpoint step to first crossing of 90% of target">Rise Time</span><span class="telem-value" id="mRise">—</span></div>
+          <div class="telem-item"><span class="telem-label" title="Time until temperature stays within ±2°C of setpoint for 10 seconds">Settle Time</span><span class="telem-value" id="mSettle">—</span></div>
+          <div class="telem-item"><span class="telem-label" title="How far temperature overshoots the setpoint, as a percentage of the step size">Overshoot %</span><span class="telem-value warn" id="mOver">—</span></div>
+          <div class="telem-item"><span class="telem-label" title="Mean absolute error of the last 20 readings vs setpoint">SS Error °C</span><span class="telem-value" id="mSSErr">—</span></div>
+          <div class="telem-item" style="grid-column:1/-1;"><span class="telem-label" title="Integral of absolute error over the run — lower is better">IAE (°C·s)</span><span class="telem-value" id="mIAE">—</span></div>
+        </div>
       </div>
 
     </div><!-- /sidebar -->
@@ -554,6 +620,29 @@
       <div style="display:flex;gap:8px;">
         <button class="primary" id="btnTestStart" onclick="startTest()">&#9654; Start Test</button>
         <button class="danger" id="btnTestStop" onclick="stopTest()" disabled>&#9632; Stop</button>
+      </div>
+
+      <!-- CSV -->
+      <div class="section">
+        <div class="section-title">CSV Recording</div>
+        <div class="row">
+          <label>Run ID</label>
+          <input type="text" id="tRunId" placeholder="e.g. run_001"
+                 title="Run identifier written into the CSV header"
+                 oninput="document.getElementById('runId').value=this.value;">
+        </div>
+        <div class="row">
+          <label>Heatsink</label>
+          <input type="text" id="tHeatsinkId" placeholder="e.g. HS_finned_A"
+                 title="Heatsink identifier written into the CSV header"
+                 oninput="document.getElementById('heatsinkId').value=this.value;">
+        </div>
+        <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center;">
+          <button class="small primary" id="btnTesterStartCsv" onclick="startCsv()" title="Choose columns and start CSV recording">&#9679; Start CSV</button>
+          <button class="small danger" id="btnTesterStopCsv" onclick="stopCsv()" title="Stop CSV recording">&#9632; Stop CSV</button>
+          <button class="small" id="btnTesterMarker" onclick="addMarker()" title="Add a phase marker annotation to the chart and CSV">&#128204; Marker</button>
+          <span id="tCsvPill" class="status-pill" style="display:none;">CSV: On</span>
+        </div>
       </div>
 
       <!-- Live status -->
@@ -603,43 +692,44 @@
       <div class="chart-settings">
         <div class="chart-controls">
           <div class="radio-group">
-            <label><input type="radio" name="viewMode" value="rolling" checked onchange="setViewMode('rolling')"> Rolling</label>
-            <label><input type="radio" name="viewMode" value="full" onchange="setViewMode('full')"> Full</label>
+            <label title="Rolling: scroll with newest data in a fixed time window"><input type="radio" name="viewMode" value="rolling" checked onchange="setViewMode('rolling')"> Rolling</label>
+            <label title="Full: show the entire recorded run from start"><input type="radio" name="viewMode" value="full" onchange="setViewMode('full')"> Full</label>
           </div>
-          <label style="display:flex;align-items:center;gap:4px;">
+          <label style="display:flex;align-items:center;gap:4px;" title="Automatically keep the chart window following the latest data">
             <input type="checkbox" id="autoScroll" checked onchange="updateChart()">
             Auto-scroll
           </label>
-          <label style="display:flex;align-items:center;gap:4px;min-width:0;">
+          <label style="display:flex;align-items:center;gap:4px;min-width:0;" title="Width of the rolling time window in seconds">
             Window&nbsp;
-            <input type="text" id="windowSec" value="120" style="width:55px;" onchange="updateChart()">s
+            <input type="text" id="windowSec" value="120" style="width:55px;" onchange="updateChart()" title="Rolling window width in seconds">s
           </label>
-          <label style="display:flex;align-items:center;gap:4px;min-width:0;">
+          <label style="display:flex;align-items:center;gap:4px;min-width:0;" title="Maximum number of data points kept in memory (older points are discarded)">
             Max pts&nbsp;
-            <input type="text" id="maxPts" value="5000" style="width:60px;">
+            <input type="text" id="maxPts" value="5000" style="width:60px;" title="Max data points in memory">
           </label>
-          <button class="small" onclick="clearChart()">Clear</button>
+          <button class="small" onclick="clearChart()" title="Clear all chart data and history">Clear</button>
+          <button class="small" id="btnCursor" onclick="toggleCursor()" title="Toggle crosshair cursor — shows all series values at mouse position">Cursor: OFF</button>
         </div>
         <div class="series-checks">
-          <label class="series-check"><input type="checkbox" onchange="toggleSeries('raw_temp')"><span class="swatch" style="background:#94a3b8"></span><span>Raw Temp</span></label>
-          <label class="series-check"><input type="checkbox" onchange="toggleSeries('temp')"><span class="swatch" style="background:#60a5fa"></span><span>Temp</span></label>
-          <label class="series-check"><input type="checkbox" checked onchange="toggleSeries('smooth')"><span class="swatch" style="background:#34d399"></span><span>Smooth</span></label>
-          <label class="series-check"><input type="checkbox" checked onchange="toggleSeries('sp')"><span class="swatch" style="background:#f97316"></span><span>SP</span></label>
-          <label class="series-check"><input type="checkbox" checked onchange="toggleSeries('pwm')"><span class="swatch" style="background:#a78bfa"></span><span>PWM</span></label>
-          <label class="series-check"><input type="checkbox" onchange="toggleSeries('fan_pwm')"><span class="swatch" style="background:#f472b6"></span><span>Fan PWM</span></label>
-          <label class="series-check"><input type="checkbox" onchange="toggleSeries('holdpwm')"><span class="swatch" style="background:#4ade80"></span><span>Hold PWM</span></label>
-          <label class="series-check"><input type="checkbox" onchange="toggleSeries('eq_pwm')"><span class="swatch" style="background:#f43f5e"></span><span>Eq PWM</span></label>
-          <label class="series-check"><input type="checkbox" onchange="toggleSeries('power_w')"><span class="swatch" style="background:#fde047"></span><span>Power W</span></label>
-          <label class="series-check"><input type="checkbox" onchange="toggleSeries('enter_prog')"><span class="swatch" style="background:#a3e635"></span><span>Enter %</span></label>
-          <label class="series-check"><input type="checkbox" onchange="toggleSeries('exit_prog')"><span class="swatch" style="background:#facc15"></span><span>Exit %</span></label>
+          <label class="series-check" title="Raw unfiltered temperature from thermocouple"><input type="checkbox" onchange="toggleSeries('raw_temp', this)"><span class="swatch" style="background:#94a3b8"></span><span>Raw Temp</span></label>
+          <label class="series-check" title="Glitch-filtered temperature (large spikes removed)"><input type="checkbox" onchange="toggleSeries('temp', this)"><span class="swatch" style="background:#60a5fa"></span><span>Temp</span></label>
+          <label class="series-check" title="EMA-smoothed temperature used by the PID controller"><input type="checkbox" checked onchange="toggleSeries('smooth', this)"><span class="swatch" style="background:#34d399"></span><span>Smooth</span></label>
+          <label class="series-check" title="Target temperature setpoint"><input type="checkbox" checked onchange="toggleSeries('sp', this)"><span class="swatch" style="background:#f97316"></span><span>SP</span></label>
+          <label class="series-check" title="Heater PWM duty cycle (0–255)"><input type="checkbox" checked onchange="toggleSeries('pwm', this)"><span class="swatch" style="background:#a78bfa"></span><span>PWM</span></label>
+          <label class="series-check" title="Fan PWM raw output value"><input type="checkbox" onchange="toggleSeries('fan_pwm', this)"><span class="swatch" style="background:#f472b6"></span><span>Fan PWM</span></label>
+          <label class="series-check" title="SMART mode: PWM value held during HOLD state"><input type="checkbox" onchange="toggleSeries('holdpwm', this)"><span class="swatch" style="background:#4ade80"></span><span>Hold PWM</span></label>
+          <label class="series-check" title="Converging equilibrium PWM estimate (EMA of PWM near steady-state)"><input type="checkbox" onchange="toggleSeries('eq_pwm', this)"><span class="swatch" style="background:#f43f5e"></span><span>Eq PWM</span></label>
+          <label class="series-check" title="Heater power in Watts from INA226 current sensor"><input type="checkbox" onchange="toggleSeries('power_w', this)"><span class="swatch" style="background:#fde047"></span><span>Power W</span></label>
+          <label class="series-check" title="SMART mode: progress toward entering HOLD state (0–100%)"><input type="checkbox" onchange="toggleSeries('enter_prog', this)"><span class="swatch" style="background:#a3e635"></span><span>Enter %</span></label>
+          <label class="series-check" title="SMART mode: progress toward exiting HOLD state (0–100%)"><input type="checkbox" onchange="toggleSeries('exit_prog', this)"><span class="swatch" style="background:#facc15"></span><span>Exit %</span></label>
         </div>
-        <div style="margin-top:4px;">
-          <button class="small" id="btnPidDebug" onclick="togglePidDebug()">PID Debug: OFF</button>
+        <div style="margin-top:4px;" data-expert="true">
+          <button class="small" id="btnPidDebug" onclick="togglePidDebug()" title="Show or hide P, I, D and PID output series on the chart">PID Debug: OFF</button>
           <div id="pidDebugChecks" style="display:none;margin-top:4px;" class="series-checks">
-            <label class="series-check"><input type="checkbox" onchange="toggleSeries('p_term')"><span class="swatch" style="background:#fbbf24"></span><span>P Term</span></label>
-            <label class="series-check"><input type="checkbox" onchange="toggleSeries('i_term')"><span class="swatch" style="background:#fb923c"></span><span>I Term</span></label>
-            <label class="series-check"><input type="checkbox" onchange="toggleSeries('d_term')"><span class="swatch" style="background:#e879f9"></span><span>D Term</span></label>
-            <label class="series-check"><input type="checkbox" onchange="toggleSeries('pid_out')"><span class="swatch" style="background:#38bdf8"></span><span>PID Out</span></label>
+            <label class="series-check" title="Proportional term contribution to PID output"><input type="checkbox" onchange="toggleSeries('p_term', this)"><span class="swatch" style="background:#fbbf24"></span><span>P Term</span></label>
+            <label class="series-check" title="Integral term contribution to PID output"><input type="checkbox" onchange="toggleSeries('i_term', this)"><span class="swatch" style="background:#fb923c"></span><span>I Term</span></label>
+            <label class="series-check" title="Derivative term contribution to PID output"><input type="checkbox" onchange="toggleSeries('d_term', this)"><span class="swatch" style="background:#e879f9"></span><span>D Term</span></label>
+            <label class="series-check" title="Total PID output before saturation clamping"><input type="checkbox" onchange="toggleSeries('pid_out', this)"><span class="swatch" style="background:#38bdf8"></span><span>PID Out</span></label>
           </div>
         </div>
       </div>
@@ -649,6 +739,8 @@
         <div class="chart-wrap">
           <div class="canvas-container">
             <canvas id="chart"></canvas>
+            <div id="cursorLine"></div>
+            <div id="cursorTooltip"></div>
           </div>
         </div>
         <div class="chart-resize-handle" id="chartResizeHandle"></div>
@@ -660,11 +752,11 @@
         <div class="log-header">
           <h2 style="margin:0;">Serial Log</h2>
           <label style="display:flex;align-items:center;gap:4px;margin-left:auto;color:var(--text-muted);font-size:11px;" id="logCount">0 lines</label>
-          <label style="display:flex;align-items:center;gap:4px;">
+          <label style="display:flex;align-items:center;gap:4px;" title="Automatically scroll to the newest log entry">
             <input type="checkbox" id="logAutoScroll" checked>
             Auto-scroll
           </label>
-          <button class="small" onclick="clearLog()">Clear</button>
+          <button class="small" onclick="clearLog()" title="Clear the serial log panel">Clear</button>
         </div>
         <div class="log-box" id="logBox"></div>
       </div>
@@ -672,6 +764,94 @@
     </div><!-- /content -->
   </div><!-- /main -->
 </div><!-- /app -->
+
+<!-- CSV Column Selection Modal -->
+<div id="csvColModal" class="modal-overlay" style="display:none;" onclick="if(event.target===this){this.style.display='none';closeExcelHelp();}">
+  <div class="modal-anchor">
+    <div class="modal-box">
+      <div class="modal-title">Select CSV Columns</div>
+      <div style="display:flex;gap:6px;margin-bottom:8px;">
+        <button class="small" onclick="csvColSelectAll(true)">Select All</button>
+        <button class="small" onclick="csvColSelectAll(false)">Deselect All</button>
+      </div>
+      <div id="csvColGroups"></div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:10px;">
+        <div class="col-group-title" style="margin:0;flex:1;">Excel Power Query — paste into Advanced Editor (replace everything after your Source line):</div>
+        <button class="small" id="btnExcelHelp" onclick="toggleExcelHelp()" title="Step-by-step guide to importing this CSV into Excel">? Help</button>
+      </div>
+      <div class="excel-box" id="excelFormula"></div>
+      <div style="display:flex;gap:8px;margin-top:12px;">
+        <button class="primary" onclick="csvColConfirm()">Start Recording</button>
+        <button onclick="document.getElementById('csvColModal').style.display='none';closeExcelHelp();">Cancel</button>
+      </div>
+    </div>
+    <!-- Help pane slides out from right edge of modal-box -->
+    <div id="excelHelpPane">
+      <div class="help-inner">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+          <div class="modal-title" style="margin:0;">How to import into Excel</div>
+          <button onclick="closeExcelHelp()" style="font-size:16px;line-height:1;padding:2px 8px;" title="Close">✕</button>
+        </div>
+        <div class="help-step">
+          <div class="help-step-num">1</div>
+          <div>
+            <div class="help-step-desc">Open Excel, go to the <strong>Data</strong> tab and click <strong>From Text/CSV</strong>.</div>
+            <img class="help-step-img" src="/static/media/CSV%20import%20help%20media/1open%20excel%20go%20to%20data%20tab%20and%20press%20From%20Text%20CSV.png" alt="Step 1">
+          </div>
+        </div>
+        <div class="help-step">
+          <div class="help-step-num">2</div>
+          <div>
+            <div class="help-step-desc">Navigate to the <strong>logs</strong> folder inside the program directory.</div>
+            <img class="help-step-img" src="/static/media/CSV%20import%20help%20media/2Go%20to%20the%20logs%20file%20of%20the%20program%20directory.png" alt="Step 2">
+          </div>
+        </div>
+        <div class="help-step">
+          <div class="help-step-num">3</div>
+          <div>
+            <div class="help-step-desc">Choose the CSV file you want. Sort by <strong>Date modified</strong> to find the newest one.</div>
+            <img class="help-step-img" src="/static/media/CSV%20import%20help%20media/3choose%20the%20latest%20created%20CSV%20file%20you%20can%20look%20at%20the%20%20name%20or%20%20in%20the%20tab%20last%20edited.png" alt="Step 3">
+          </div>
+        </div>
+        <div class="help-step">
+          <div class="help-step-num">4</div>
+          <div>
+            <div class="help-step-desc">Click <strong>Import</strong>.</div>
+            <img class="help-step-img" src="/static/media/CSV%20import%20help%20media/4than%20press%20import.png" alt="Step 4">
+          </div>
+        </div>
+        <div class="help-step">
+          <div class="help-step-num">5</div>
+          <div>
+            <div class="help-step-desc">A preview window appears — click <strong>Transform Data</strong>. Do not click Load.</div>
+            <img class="help-step-img" src="/static/media/CSV%20import%20help%20media/5a%20pages%20shows%20up%20and%20you%20need%20to%20press%20Transform%20Data.png" alt="Step 5">
+          </div>
+        </div>
+        <div class="help-step">
+          <div class="help-step-num">6</div>
+          <div>
+            <div class="help-step-desc">Power Query opens — click <strong>Advanced Editor</strong> in the top-left ribbon.</div>
+            <img class="help-step-img" src="/static/media/CSV%20import%20help%20media/6a%20new%20pages%20opens%20press%20in%20top%20left%20on%20Advanced%20editor.png" alt="Step 6">
+          </div>
+        </div>
+        <div class="help-step">
+          <div class="help-step-num">7</div>
+          <div>
+            <div class="help-step-desc">Select everything <strong>after</strong> the <code>Source = Csv.Document(...)</code> line and replace it with the formula in the dialog.</div>
+            <img class="help-step-img" src="/static/media/CSV%20import%20help%20media/7Replace%20the%20%20selected%20text%20with%20the%20given%20text.png" alt="Step 7">
+          </div>
+        </div>
+        <div class="help-step">
+          <div class="help-step-num">8</div>
+          <div>
+            <div class="help-step-desc">The editor should look like this. Click <strong>Done</strong>, close Power Query, and click <strong>Keep</strong> when prompted.</div>
+            <img class="help-step-img" src="/static/media/CSV%20import%20help%20media/8how%20it%20shuld%20look%20like%20press%20done%20close%20that%20page%20and%20press%20keep.png" alt="Step 8">
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script>
 'use strict';
@@ -689,9 +869,16 @@ const history = {
   holdpwm: [], enter_prog: [], exit_prog: [], fan_pwm: [], eq_pwm: [], power_w: []
 };
 
+const markers = [];  // [{ts, label}]
+
 let viewMode = 'rolling';
 let serialConnected = false;
 let currentMode = 'AUTO';
+let expertMode = true;
+let cursorOn = false;
+let cursorPinned = false;
+let lastMetricsSP = null;
+let csvColLastSelection = null;
 
 // ---------------------------------------------------------------------------
 // Chart setup
@@ -773,6 +960,33 @@ const chart = new Chart(ctx, {
   }
 });
 
+// Marker vertical-line plugin
+Chart.register({
+  id: 'markerLines',
+  afterDraw(ch) {
+    const ctx = ch.ctx;
+    const xScale = ch.scales.x;
+    if (!xScale) return;
+    markers.forEach(m => {
+      const x = xScale.getPixelForValue(m.ts);
+      if (x < ch.chartArea.left || x > ch.chartArea.right) return;
+      ctx.save();
+      ctx.strokeStyle = '#f97316';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(x, ch.chartArea.top);
+      ctx.lineTo(x, ch.chartArea.bottom);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#f97316';
+      ctx.font = '10px sans-serif';
+      ctx.fillText(m.label, x + 3, ch.chartArea.top + 12);
+      ctx.restore();
+    });
+  }
+});
+
 function resizeChart() { chart.resize(); }
 window.addEventListener('resize', resizeChart);
 setTimeout(resizeChart, 100);
@@ -837,11 +1051,20 @@ function clearChart() {
   updateChart();
 }
 
-function toggleSeries(key) {
+function toggleSeries(key, cb) {
   const idx = SERIES_CFG.findIndex(s => s.key === key);
   if (idx < 0) return;
-  chartDatasets[idx].hidden = !chartDatasets[idx].hidden;
+  chartDatasets[idx].hidden = cb ? !cb.checked : !chartDatasets[idx].hidden;
   chart.update('none');
+}
+
+function syncSeriesCheckboxes() {
+  document.querySelectorAll('.series-check input[type=checkbox]').forEach(cb => {
+    const m = (cb.getAttribute('onchange') || '').match(/toggleSeries\('([^']+)'/);
+    if (!m) return;
+    const idx = SERIES_CFG.findIndex(s => s.key === m[1]);
+    if (idx >= 0) cb.checked = !chartDatasets[idx].hidden;
+  });
 }
 
 function setViewMode(mode) {
@@ -947,12 +1170,21 @@ function handleMsg(msg) {
     updateHeatsinkChars(msg);
     return;
   }
+
+  if (msg.type === 'marker') {
+    const lastTs = history.ts.length ? history.ts[history.ts.length - 1] : 0;
+    markers.push({ ts: lastTs, label: msg.label });
+    updateChart();
+    appendLog(`[MARKER] ${msg.label}`, 'info');
+    return;
+  }
 }
 
 function updateConnUI(connected, port, baud) {
   document.getElementById('btnConnect').disabled = connected;
   document.getElementById('btnDisconnect').disabled = !connected;
   document.getElementById('btnCsvStart').disabled = !connected;
+  document.getElementById('btnAddMarker').style.display = connected ? '' : 'none';
   if (connected) {
     setPill('connPill', `${port} @ ${baud}`, 'connected');
   } else {
@@ -974,6 +1206,13 @@ function showCsvPill(on, name) {
   if (name) el.textContent = 'CSV: ' + name;
   document.getElementById('btnCsvStart').disabled = on || !serialConnected;
   document.getElementById('btnCsvStop').disabled = !on;
+  // sync tester panel pill and buttons
+  const tPill = document.getElementById('tCsvPill');
+  if (tPill) { tPill.style.display = on ? '' : 'none'; if (name) tPill.textContent = 'CSV: ' + name; }
+  const tStart = document.getElementById('btnTesterStartCsv');
+  const tStop  = document.getElementById('btnTesterStopCsv');
+  if (tStart) tStart.disabled = on || !serialConnected;
+  if (tStop)  tStop.disabled  = !on;
 }
 
 function updateTelemetry(d) {
@@ -1030,6 +1269,14 @@ function pushHistory(d) {
     const drop = history.ts.length - trim;
     Object.keys(history).forEach(k => history[k].splice(0, drop));
   }
+
+  // Auto-compute metrics when SP changes by >2°C
+  const newSP = d.sp;
+  if (document.getElementById('autoComputeMetrics').checked &&
+      lastMetricsSP !== null && Math.abs(newSP - lastMetricsSP) > 2) {
+    setTimeout(computeMetrics, 100);
+  }
+  lastMetricsSP = newSP;
 }
 
 function applyCfg(c) {
@@ -1160,12 +1407,8 @@ function applyAll() {
   saveState();
 }
 
-async function startCsv() {
-  const r = await api('/api/csv/start', 'POST');
-  if (!r.ok) { alert('CSV error: ' + r.msg); return; }
-  const name = r.msg.split(/[\\/]/).pop();
-  showCsvPill(true, name.slice(0, 20));
-  appendLog('CSV logging started: ' + r.msg);
+function startCsv() {
+  openCsvColumnDialog();
 }
 
 async function stopCsv() {
@@ -1301,6 +1544,10 @@ async function saveState() {
   });
   s.ctrl_mode = currentMode;
   s.fan_inv = document.getElementById('fanInv').checked ? '1' : '0';
+  s.expert_mode = expertMode ? '1' : '0';
+  s.run_id = document.getElementById('runId').value;
+  s.heatsink_id = document.getElementById('heatsinkId').value;
+  if (csvColLastSelection) s.csv_columns = JSON.stringify(csvColLastSelection);
   await api('/api/state', 'POST', s);
 }
 
@@ -1313,6 +1560,17 @@ async function loadState() {
   set('pFAN','fan'); set('pMANPWM','manpwm');
   if (s.ctrl_mode) setModeUI(s.ctrl_mode);
   if (s.fan_inv !== undefined) document.getElementById('fanInv').checked = s.fan_inv === '1';
+  if (s.run_id !== undefined) document.getElementById('runId').value = s.run_id;
+  if (s.heatsink_id !== undefined) document.getElementById('heatsinkId').value = s.heatsink_id;
+  if (s.csv_columns) { try { csvColLastSelection = JSON.parse(s.csv_columns); } catch {} }
+  // Restore expert/student mode without toggling (to avoid double-flip)
+  if (s.expert_mode !== undefined) {
+    expertMode = s.expert_mode === '1';
+    document.body.classList.toggle('student-mode', !expertMode);
+    const btn = document.getElementById('btnExpertMode');
+    btn.textContent = expertMode ? '🎓 Student' : '🎓 Expert';
+    btn.classList.toggle('toggle-active', !expertMode);
+  }
   ['SPBIAS','SP','ALPHA','MAXSTEP','ENTERCNT','EXITCNT','FAN','MANPWM'].forEach(syncSlider);
 }
 
@@ -1322,6 +1580,7 @@ async function loadState() {
 async function init() {
   await refreshPorts();
   await loadState();
+  await refreshPresets();
   connectWS();
 
   // Restore status from server
@@ -1345,6 +1604,377 @@ function togglePidDebug() {
 }
 
 // ---------------------------------------------------------------------------
+// Expert / Student mode
+// ---------------------------------------------------------------------------
+function toggleExpertMode() {
+  expertMode = !expertMode;
+  document.body.classList.toggle('student-mode', !expertMode);
+  const btn = document.getElementById('btnExpertMode');
+  btn.textContent = expertMode ? '🎓 Student' : '🎓 Expert';
+  btn.classList.toggle('toggle-active', !expertMode);
+  saveState();
+}
+
+// ---------------------------------------------------------------------------
+// Phase markers
+// ---------------------------------------------------------------------------
+async function addMarker() {
+  const label = prompt('Marker label:', 'Phase 1');
+  if (!label) return;
+  await api('/api/csv/event', 'POST', { label });
+}
+
+// ---------------------------------------------------------------------------
+// Presets
+// ---------------------------------------------------------------------------
+const BUILTIN_PRESETS = {
+  'Default (Kp=8, Ki=0.06)':      { kp:'8.0',  ki:'0.06', kd:'0.0', bias:'0.0', spbias:'0.0', sp:'70.0', alpha:'0.25', maxstep:'15', entercnt:'16', exitcnt:'8',  fan:'0.0', manpwm:'0.0', mode:'AUTO' },
+  'Aggressive (Kp=15, Ki=0.1)':   { kp:'15.0', ki:'0.1',  kd:'0.5', bias:'0.0', spbias:'0.0', sp:'70.0', alpha:'0.25', maxstep:'15', entercnt:'16', exitcnt:'8',  fan:'0.0', manpwm:'0.0', mode:'AUTO' },
+  'Conservative (Kp=4, Ki=0.02)': { kp:'4.0',  ki:'0.02', kd:'0.0', bias:'0.0', spbias:'0.0', sp:'60.0', alpha:'0.1',  maxstep:'10', entercnt:'30', exitcnt:'10', fan:'0.0', manpwm:'0.0', mode:'AUTO' },
+};
+
+async function refreshPresets() {
+  const builtinGroup = document.getElementById('presetBuiltinGroup');
+  builtinGroup.innerHTML = '';
+  Object.keys(BUILTIN_PRESETS).forEach(name => {
+    const o = document.createElement('option');
+    o.value = '__builtin__' + name;
+    o.textContent = name;
+    builtinGroup.appendChild(o);
+  });
+  const r = await api('/api/presets');
+  const savedGroup = document.getElementById('presetSavedGroup');
+  savedGroup.innerHTML = '';
+  (r.presets || []).forEach(name => {
+    const o = document.createElement('option');
+    o.value = name;
+    o.textContent = name;
+    savedGroup.appendChild(o);
+  });
+}
+
+function _applyPresetData(p) {
+  const set = (id, v) => { if (v !== undefined) document.getElementById(id).value = v; };
+  set('pKP', p.kp); set('pKI', p.ki); set('pKD', p.kd); set('pBIAS', p.bias);
+  set('pSPBIAS', p.spbias); set('pSP', p.sp); set('pALPHA', p.alpha);
+  set('pMAXSTEP', p.maxstep); set('pENTERCNT', p.entercnt); set('pEXITCNT', p.exitcnt);
+  set('pFAN', p.fan); set('pMANPWM', p.manpwm);
+  if (p.fan_inv !== undefined) document.getElementById('fanInv').checked = p.fan_inv === '1';
+  if (p.mode) setModeUI(p.mode);
+  ['SPBIAS','SP','ALPHA','MAXSTEP','ENTERCNT','EXITCNT','FAN','MANPWM'].forEach(syncSlider);
+  saveState();
+}
+
+async function loadPreset() {
+  const val = document.getElementById('presetSel').value;
+  if (!val) return;
+  let p;
+  if (val.startsWith('__builtin__')) {
+    p = BUILTIN_PRESETS[val.slice(11)];
+  } else {
+    const r = await api('/api/preset/load', 'POST', { name: val });
+    if (!r.ok) { alert('Load failed: ' + r.msg); return; }
+    p = r.preset;
+  }
+  _applyPresetData(p);
+  if (serialConnected) applyAll();
+}
+
+async function savePreset() {
+  const name = prompt('Preset name:');
+  if (!name) return;
+  const p = { name };
+  ['KP','KI','KD','BIAS','SPBIAS','SP','ALPHA','MAXSTEP','ENTERCNT','EXITCNT','FAN','MANPWM'].forEach(k => {
+    p[k.toLowerCase()] = document.getElementById('p' + k).value;
+  });
+  p.mode = currentMode;
+  p.fan_inv = document.getElementById('fanInv').checked ? '1' : '0';
+  const r = await api('/api/preset/save', 'POST', p);
+  if (!r.ok) { alert('Save failed: ' + r.msg); return; }
+  await refreshPresets();
+  // Select the newly saved preset
+  const sel = document.getElementById('presetSel');
+  sel.value = name;
+}
+
+async function deletePreset() {
+  const val = document.getElementById('presetSel').value;
+  if (!val || val.startsWith('__builtin__')) { alert("Can't delete built-in presets."); return; }
+  if (!confirm(`Delete preset "${val}"?`)) return;
+  const r = await api('/api/preset/' + encodeURIComponent(val), 'DELETE');
+  if (!r.ok) { alert('Delete failed: ' + r.msg); return; }
+  await refreshPresets();
+}
+
+// ---------------------------------------------------------------------------
+// CSV Column Customization
+// ---------------------------------------------------------------------------
+const CSV_COLUMN_GROUPS = {
+  'Basic':       ['timestamp_iso','elapsed_s','temp_smooth_c','setpoint_c','effective_setpoint_c','abs_error_c','event'],
+  'Temperature': ['raw_temp_c','temp_filtered_c'],
+  'PID Details': ['pwm','p_term','i_term','d_term','pid_out','pid_bias','setpoint_bias_c'],
+  'Smart Mode':  ['mode','state','hold_pwm','enter_progress_pct','exit_progress_pct','run_state'],
+  'Fan':         ['fan_speed_pct','fan_pwm_raw','fan_inverted','manual_pwm_cmd'],
+};
+
+const CSV_EXCEL_TYPES = {
+  timestamp_iso:'type datetimezone', elapsed_s:'type number', raw_temp_c:'type number',
+  temp_filtered_c:'type number', temp_smooth_c:'type number', pwm:'Int64.Type',
+  p_term:'type number', i_term:'type number', d_term:'type number', pid_out:'type number',
+  pid_bias:'type number', setpoint_bias_c:'type number', setpoint_c:'type number',
+  effective_setpoint_c:'type number', fan_speed_pct:'type number', fan_pwm_raw:'Int64.Type',
+  mode:'type text', state:'type text', manual_pwm_cmd:'type number',
+  hold_pwm:'type number', enter_progress_pct:'type number', exit_progress_pct:'type number',
+  abs_error_c:'type number', run_state:'type text', fan_inverted:'Int64.Type', event:'type text',
+};
+
+function toggleExcelHelp() {
+  const pane = document.getElementById('excelHelpPane');
+  const btn = document.getElementById('btnExcelHelp');
+  const anchor = pane.closest('.modal-anchor');
+  const open = pane.style.width === '380px';
+  pane.style.width = open ? '0' : '380px';
+  anchor.classList.toggle('help-open', !open);
+  btn.textContent = open ? '? Help' : '✕ Help';
+}
+
+function closeExcelHelp() {
+  const pane = document.getElementById('excelHelpPane');
+  pane.style.width = '0';
+  pane.closest('.modal-anchor').classList.remove('help-open');
+  const btn = document.getElementById('btnExcelHelp');
+  if (btn) btn.textContent = '? Help';
+}
+
+function openCsvColumnDialog() {
+  const container = document.getElementById('csvColGroups');
+  container.innerHTML = '';
+  const seen = new Set();
+  Object.entries(CSV_COLUMN_GROUPS).forEach(([grp, cols]) => {
+    const h = document.createElement('div');
+    h.className = 'col-group-title';
+    h.textContent = grp;
+    container.appendChild(h);
+    cols.forEach(col => {
+      if (seen.has(col)) return;
+      seen.add(col);
+      const lbl = document.createElement('label');
+      lbl.className = 'col-check';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.id = 'csvCol_' + col;
+      cb.value = col;
+      const defaultOn = CSV_COLUMN_GROUPS['Basic'].includes(col);
+      cb.checked = csvColLastSelection ? csvColLastSelection.includes(col) : defaultOn;
+      cb.addEventListener('change', updateExcelFormula);
+      lbl.appendChild(cb);
+      lbl.appendChild(document.createTextNode(' ' + col));
+      container.appendChild(lbl);
+    });
+  });
+  updateExcelFormula();
+  document.getElementById('csvColModal').style.display = 'flex';
+}
+
+function csvColSelectAll(on) {
+  document.querySelectorAll('#csvColGroups input[type=checkbox]').forEach(cb => cb.checked = on);
+  updateExcelFormula();
+}
+
+function updateExcelFormula() {
+  const sel = [...document.querySelectorAll('#csvColGroups input:checked')].map(cb => cb.value);
+  const pairs = sel.map(c => `        {"${c}", ${CSV_EXCEL_TYPES[c] || 'type text'}}`).join(',\n');
+  const formula =
+`    FilterComments = Table.SelectRows(Source, each not Text.StartsWith(Record.Field(_, "Column1"), "#")),
+    PromotedHeaders = Table.PromoteHeaders(FilterComments, [PromoteAllScalars=true]),
+    ChangedTypes = Table.TransformColumnTypes(PromotedHeaders, {
+${pairs}
+    }, "en-US")
+in
+    ChangedTypes`;
+  document.getElementById('excelFormula').textContent = formula;
+}
+
+async function csvColConfirm() {
+  const sel = [...document.querySelectorAll('#csvColGroups input:checked')].map(cb => cb.value);
+  if (sel.length === 0) { alert('Select at least one column.'); return; }
+  // Warn if event column excluded
+  if (!sel.includes('event')) {
+    const ok = confirm('The "event" column is not selected — phase markers will not appear in the CSV. Continue?');
+    if (!ok) return;
+  }
+  csvColLastSelection = sel;
+  document.getElementById('csvColModal').style.display = 'none';
+  await api('/api/csv/columns', 'POST', { columns: sel });
+  const runId = document.getElementById('runId').value.trim();
+  const heatsinkId = document.getElementById('heatsinkId').value.trim();
+  await api('/api/csv/meta', 'POST', { run_id: runId, heatsink_id: heatsinkId });
+  const r = await api('/api/csv/start', 'POST');
+  if (!r.ok) { alert('CSV error: ' + r.msg); return; }
+  const name = r.msg.split(/[\\/]/).pop();
+  showCsvPill(true, name.slice(0, 20));
+  appendLog('CSV logging started: ' + r.msg);
+  saveState();
+}
+
+// ---------------------------------------------------------------------------
+// Performance Metrics
+// ---------------------------------------------------------------------------
+function computeMetrics() {
+  const ts = history.ts;
+  const smooth = history.smooth;
+  const sp = history.sp;
+  const n = ts.length;
+  const ids = ['mRise','mSettle','mOver','mSSErr','mIAE'];
+  if (n < 10) { ids.forEach(id => document.getElementById(id).textContent = '—'); return; }
+
+  // Find last SP step (largest change)
+  let stepIdx = 0, maxChange = 0;
+  for (let i = 1; i < n; i++) {
+    const chg = Math.abs(sp[i] - sp[i-1]);
+    if (chg > maxChange) { maxChange = chg; stepIdx = i; }
+  }
+  if (maxChange < 2) { document.getElementById('mRise').textContent = 'No step'; return; }
+
+  const sp_val = sp[stepIdx];
+  const t0 = ts[stepIdx];
+  const temp0 = smooth[stepIdx];
+  const rising = sp_val > temp0;
+
+  // Rise time: first crossing of 90% of step
+  const target90 = temp0 + 0.9 * (sp_val - temp0);
+  let riseTime = null;
+  for (let i = stepIdx; i < n; i++) {
+    if ((rising && smooth[i] >= target90) || (!rising && smooth[i] <= target90)) {
+      riseTime = ts[i] - t0; break;
+    }
+  }
+
+  // Settling time: first entry into ±2°C band that stays for 10s
+  const band = 2.0, stayWindow = 10;
+  let settleTime = null;
+  for (let i = stepIdx; i < n; i++) {
+    if (Math.abs(smooth[i] - sp_val) <= band) {
+      const tIn = ts[i];
+      let stayOk = true;
+      for (let j = i; j < n && ts[j] - tIn < stayWindow; j++) {
+        if (Math.abs(smooth[j] - sp_val) > band) { stayOk = false; break; }
+      }
+      if (stayOk) { settleTime = tIn - t0; break; }
+    }
+  }
+
+  // Overshoot
+  let peak = smooth[stepIdx];
+  for (let i = stepIdx; i < n; i++) {
+    if (rising && smooth[i] > peak) peak = smooth[i];
+    if (!rising && smooth[i] < peak) peak = smooth[i];
+  }
+  const range = sp_val - temp0;
+  const overshoot = range !== 0 ? ((peak - sp_val) / range) * 100 : 0;
+
+  // SS error: mean of last 20 smooth vs sp
+  const last20s = smooth.slice(-20), last20sp = sp.slice(-20);
+  const meanS = last20s.reduce((a,b) => a+b, 0) / last20s.length;
+  const meanSP = last20sp.reduce((a,b) => a+b, 0) / last20sp.length;
+  const ssErr = Math.abs(meanS - meanSP);
+
+  // IAE from step start
+  let iae = 0;
+  for (let i = stepIdx + 1; i < n; i++) {
+    iae += Math.abs(smooth[i] - sp[i]) * (ts[i] - ts[i-1]);
+  }
+
+  const fmt = (v, d=2) => v !== null && v !== undefined ? Number(v).toFixed(d) : '—';
+  document.getElementById('mRise').textContent = riseTime !== null ? fmt(riseTime) + ' s' : '—';
+  document.getElementById('mSettle').textContent = settleTime !== null ? fmt(settleTime) + ' s' : '—';
+  document.getElementById('mOver').textContent = fmt(overshoot, 1) + '%';
+  document.getElementById('mSSErr').textContent = fmt(ssErr) + ' °C';
+  document.getElementById('mIAE').textContent = fmt(iae, 1);
+}
+
+// ---------------------------------------------------------------------------
+// Graph cursor / probe tool
+// ---------------------------------------------------------------------------
+function toggleCursor() {
+  cursorOn = !cursorOn;
+  cursorPinned = false;
+  document.getElementById('btnCursor').textContent = 'Cursor: ' + (cursorOn ? 'ON' : 'OFF');
+  document.getElementById('btnCursor').classList.toggle('toggle-active', cursorOn);
+  if (!cursorOn) hideCursor();
+}
+
+function hideCursor() {
+  document.getElementById('cursorLine').style.display = 'none';
+  document.getElementById('cursorTooltip').style.display = 'none';
+}
+
+function showCursorAt(e) {
+  const canvas = document.getElementById('chart');
+  const container = canvas.parentElement;
+  const containerRect = container.getBoundingClientRect();
+  const relX = e.clientX - containerRect.left;
+  const relY = e.clientY - containerRect.top;
+
+  const xScale = chart.scales.x;
+  if (!xScale) return;
+  const xVal = xScale.getValueForPixel(relX);
+
+  // Binary search closest index in history.ts
+  const ts = history.ts;
+  if (ts.length === 0) return;
+  let lo = 0, hi = ts.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (ts[mid] < xVal) lo = mid + 1; else hi = mid;
+  }
+  const idx = lo;
+
+  // Build tooltip
+  let html = `<div style="color:var(--text-muted);margin-bottom:4px;font-size:10px;">t = ${ts[idx].toFixed(1)} s</div>`;
+  SERIES_CFG.forEach((s, i) => {
+    if (chartDatasets[i].hidden) return;
+    const v = history[s.key]?.[idx];
+    if (v === undefined || v === null) return;
+    html += `<div style="display:flex;justify-content:space-between;gap:10px;">
+      <span style="color:${s.color}">${s.label}</span>
+      <span>${Number(v).toFixed(2)}</span>
+    </div>`;
+  });
+
+  const line = document.getElementById('cursorLine');
+  const tip = document.getElementById('cursorTooltip');
+
+  line.style.left = relX + 'px';
+  line.style.height = container.offsetHeight + 'px';
+  line.style.display = 'block';
+
+  tip.innerHTML = html;
+  tip.style.display = 'block';
+  const tipW = 220;
+  const leftPos = (relX + 12 + tipW > container.offsetWidth) ? relX - tipW - 4 : relX + 12;
+  tip.style.left = Math.max(0, leftPos) + 'px';
+  tip.style.top = Math.max(0, relY - 20) + 'px';
+}
+
+(function() {
+  const canvas = document.getElementById('chart');
+  canvas.addEventListener('mousemove', e => {
+    if (!cursorOn || cursorPinned) return;
+    showCursorAt(e);
+  });
+  canvas.addEventListener('click', e => {
+    if (!cursorOn) return;
+    cursorPinned = !cursorPinned;
+    if (!cursorPinned) hideCursor();
+    else showCursorAt(e);
+  });
+  canvas.addEventListener('mouseleave', () => {
+    if (cursorOn && !cursorPinned) hideCursor();
+  });
+})();
+
+// ---------------------------------------------------------------------------
 // Tester Mode
 // ---------------------------------------------------------------------------
 let testerActive = false;
@@ -1362,12 +1992,16 @@ function enterTesterMode() {
   document.querySelector('.sidebar').style.display = 'none';
   document.getElementById('testerPanel').style.display = 'flex';
   document.getElementById('btnTesterMode').style.display = 'none';
+  // Mirror Run ID / Heatsink from sidebar into tester inputs
+  document.getElementById('tRunId').value = document.getElementById('runId').value;
+  document.getElementById('tHeatsinkId').value = document.getElementById('heatsinkId').value;
   // Set tester-friendly series: show Smooth, SP, PWM, EqPWM, Power W; hide others
   const show = ['smooth','sp','pwm','eq_pwm','power_w'];
   SERIES_CFG.forEach((s, i) => {
     chartDatasets[i].hidden = !show.includes(s.key);
   });
   chart.update('none');
+  syncSeriesCheckboxes();
 }
 
 function exitTesterMode() {
