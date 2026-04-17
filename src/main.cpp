@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <Wire.h>
 #include <math.h>
 #include "SystemState.h"
 #include "PIDController.h"
@@ -35,6 +36,14 @@ static float    pwmDitherAccumulator = 0.0f;
 
 // ── PWM slew-rate state ────────────────────────────────────────────────────────
 static int lastPWM = 0;
+
+// ── EZO-HUM humidity sensor (I2C 0x6F) ────────────────────────────────────────
+#define EZO_HUM_ADDR          0x6F
+#define EZO_RESPONSE_DELAY_MS 300
+static int8_t   humSlot        = -1;
+static int8_t   humTempSlot    = -1;
+static bool     ezoReadPending = false;
+static uint32_t ezoSendTime    = 0;
 
 // ── Global instances ───────────────────────────────────────────────────────────
 SystemState     sys;
@@ -166,12 +175,23 @@ void setup() {
     applyPidTunings();
     resetSmartState();
 
-    // ── Register extension sensors here when hardware is connected ────────
-    // Example (uncomment and adapt when sensor is wired):
+    // ── Register extension sensors ────────────────────────────────────────
     //   int8_t airspeedSlot = extSensors.registerSensor("AIRSPEED", "m/s");
     //   int8_t deltaP1Slot  = extSensors.registerSensor("DELTA_P1", "Pa");
     //   int8_t deltaP2Slot  = extSensors.registerSensor("DELTA_P2", "Pa");
-    //   int8_t humiditySlot = extSensors.registerSensor("HUMIDITY", "%RH");
+
+    // EZO-HUM humidity probe (I2C 0x6F, shares bus with INA226)
+    humSlot     = extSensors.registerSensor("HUMIDITY", "%");
+    humTempSlot = extSensors.registerSensor("HUM_TEMP", "C");
+    // Enable temperature output, disable dew point
+    Wire.beginTransmission(EZO_HUM_ADDR);
+    Wire.write("O,T,1\r");
+    Wire.endTransmission();
+    delay(300);
+    Wire.beginTransmission(EZO_HUM_ADDR);
+    Wire.write("O,Dew,0\r");
+    Wire.endTransmission();
+    delay(300);
     // ─────────────────────────────────────────────────────────────────────
 
     Serial.println("System started");
@@ -188,11 +208,39 @@ void loop() {
     if ((now - lastControlMs) < CONTROL_PERIOD_MS) return;
     lastControlMs = now;
 
+    // ── EZO-HUM: read previous response (sent ~500 ms ago, > 300 ms needed) ─
+    if (ezoReadPending && (millis() - ezoSendTime >= EZO_RESPONSE_DELAY_MS)) {
+        Wire.requestFrom((uint8_t)EZO_HUM_ADDR, (uint8_t)20);
+        uint8_t status = Wire.available() ? Wire.read() : 0xFF; // first byte is status code
+        char buf[24] = {};
+        uint8_t idx = 0;
+        if (status == 0x01) {  // 0x01 = success; skip parse on error/not-ready
+            while (Wire.available() && idx < sizeof(buf) - 1) {
+                char c = Wire.read();
+                if (c == 0 || c == '\r') break;
+                buf[idx++] = c;
+            }
+        }
+        ezoReadPending = false;
+        char *comma = strchr(buf, ',');
+        if (comma) {
+            *comma = '\0';
+            if (humSlot     >= 0) extSensors.update(humSlot,     atof(buf));
+            if (humTempSlot >= 0) extSensors.update(humTempSlot, atof(comma + 1));
+        }
+    }
+
+    // ── EZO-HUM: send new read command for next tick ──────────────────────
+    Wire.beginTransmission(EZO_HUM_ADDR);
+    Wire.write('R');
+    Wire.endTransmission();
+    ezoReadPending = true;
+    ezoSendTime    = millis();
+
     // ── Read all sensors ──────────────────────────────────────────────────
     CoreSensorData sd = sensors.read();
 
     // ── Update extension sensor slots here when hardware is connected ─────
-    // Example:
     //   extSensors.update(airspeedSlot, readAirspeed());
     //   extSensors.update(deltaP1Slot,  readDeltaP1());
     // ─────────────────────────────────────────────────────────────────────

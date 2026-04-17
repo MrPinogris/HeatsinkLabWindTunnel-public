@@ -527,6 +527,8 @@
           <div class="telem-item" data-expert="true"><span class="telem-label">Fan Inv</span><span class="telem-value" id="tFanInv">-</span></div>
           <div class="telem-item" data-expert="true"><span class="telem-label">Eq PWM</span><span class="telem-value" id="tEqPWM">-</span></div>
           <div class="telem-item"><span class="telem-label">Power W</span><span class="telem-value" id="tPowerW">-</span></div>
+          <div class="telem-item"><span class="telem-label">Humidity</span><span class="telem-value" id="tHumidity">-</span></div>
+          <div class="telem-item"><span class="telem-label">Amb. Temp</span><span class="telem-value" id="tHumTemp">-</span></div>
         </div>
       </div>
 
@@ -1242,6 +1244,8 @@ function updateTelemetry(d) {
   document.getElementById('tFanInv').textContent = d.fan_inv === '1' ? 'Yes' : 'No';
   document.getElementById('tEqPWM').textContent = fmt(d.eq_pwm, 1);
   document.getElementById('tPowerW').textContent = fmt(d.power_w, 3) + ' W';
+  document.getElementById('tHumidity').textContent = d.humidity_pct != null ? fmt(d.humidity_pct, 1) + ' %' : '-';
+  document.getElementById('tHumTemp').textContent = d.hum_temp_c != null ? fmt(d.hum_temp_c, 1) + ' °C' : '-';
 }
 
 function pushHistory(d) {
@@ -2128,6 +2132,7 @@ function recordResult(d, amb, r_th) {
     power_w: d.power_w,
     r_th: r_th,
     k: k,
+    humidity_pct: d.humidity_pct != null ? d.humidity_pct : null,
   };
   testResults.push(result);
   appendLog(`[TESTER] Step ${testStepIdx+1} done: EqPWM=${(d.eq_pwm??0).toFixed(1)}, P=${(d.power_w??0).toFixed(2)}W, R_th=${r_th!=null?r_th.toFixed(3):'-'}`, 'info');
@@ -2173,10 +2178,10 @@ function stopTest() {
 
 function downloadResultsCsv() {
   if (testResults.length === 0) { alert('No results yet.'); return; }
-  const lines = ['SP_degC,Temp_actual,Ambient_degC,EqPWM,Power_W,R_th,k'];
+  const lines = ['SP_degC,Temp_actual,Ambient_degC,EqPWM,Power_W,R_th,k,Humidity_pct'];
   testResults.forEach(r => {
     const fmt = (v, d=3) => v != null ? Number(v).toFixed(d) : '';
-    lines.push([r.sp, fmt(r.temp), fmt(r.ambient,1), fmt(r.eq_pwm,1), fmt(r.power_w,3), fmt(r.r_th,4), fmt(r.k,4)].join(','));
+    lines.push([r.sp, fmt(r.temp), fmt(r.ambient,1), fmt(r.eq_pwm,1), fmt(r.power_w,3), fmt(r.r_th,4), fmt(r.k,4), fmt(r.humidity_pct,1)].join(','));
   });
   const blob = new Blob([lines.join('\n')], {type:'text/csv'});
   const a = document.createElement('a');

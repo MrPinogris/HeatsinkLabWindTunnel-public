@@ -42,6 +42,8 @@ TELEMETRY_RE = re.compile(
     r"(?:\D+RUN:\s*(ON|OFF)\D+FANINV:\s*([01]))?"
     r"(?:\D+V:\s*([-+]?\d*\.?\d+)\s*V\D+I:\s*([-+]?\d*\.?\d+)\s*A\D+W:\s*([-+]?\d*\.?\d+)\s*W)?"
     r"(?:\D+EQPWM:\s*([-+]?\d*\.?\d+))?"
+    r"(?:.*?HUMIDITY:\s*([-+]?\d*\.?\d+)\s*%)?"
+    r"(?:.*?HUM_TEMP:\s*([-+]?\d*\.?\d+)\s*C)?"
 )
 
 CFG_RE = re.compile(
@@ -322,6 +324,8 @@ class AppState:
             ina_current = float(m.group(25) or 0.0)
             ina_power   = float(m.group(26) or 0.0)
             eq_pwm = float(m.group(27) or 0.0)
+            humidity_pct = float(m.group(28)) if m.group(28) is not None else None
+            hum_temp_c   = float(m.group(29)) if m.group(29) is not None else None
 
             now_iso = dt.datetime.now(dt.timezone.utc).astimezone().isoformat(timespec="milliseconds")
 
@@ -356,6 +360,8 @@ class AppState:
                 "ina_current": ina_current,
                 "power_w": ina_power,
                 "eq_pwm": eq_pwm,
+                "humidity_pct": humidity_pct,
+                "hum_temp_c": hum_temp_c,
             }
             self.last_telemetry = telemetry
             self.broadcast_sync(telemetry)
@@ -456,7 +462,7 @@ class AppState:
         "pid_bias", "setpoint_bias_c", "setpoint_c", "effective_setpoint_c",
         "fan_speed_pct", "fan_pwm_raw", "mode", "state", "manual_pwm_cmd",
         "hold_pwm", "enter_progress_pct", "exit_progress_pct", "abs_error_c",
-        "run_state", "fan_inverted", "event",
+        "run_state", "fan_inverted", "humidity_pct", "hum_temp_c", "event",
     ]
 
     def start_csv_logging(self) -> tuple[bool, str]:
@@ -471,7 +477,7 @@ class AppState:
             self.csv_file = open(path, "w", newline="", encoding="utf-8")
             # Write metadata comment header
             start_iso = dt.datetime.now(dt.timezone.utc).astimezone().isoformat(timespec="seconds")
-            self.csv_file.write(f"# schema_version: 1\n")
+            self.csv_file.write(f"# schema_version: 2\n")
             self.csv_file.write(f"# run_id: {self.pending_run_id}\n")
             self.csv_file.write(f"# heatsink_id: {self.pending_heatsink_id}\n")
             self.csv_file.write(f"# start_time: {start_iso}\n")
