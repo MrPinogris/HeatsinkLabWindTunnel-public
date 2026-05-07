@@ -44,6 +44,10 @@ TELEMETRY_RE = re.compile(
     r"(?:\D+EQPWM:\s*([-+]?\d*\.?\d+))?"
     r"(?:.*?HUMIDITY:\s*([-+]?\d*\.?\d+)\s*%)?"
     r"(?:.*?HUM_TEMP:\s*([-+]?\d*\.?\d+)\s*C)?"
+    r"(?:.*?DELTA_P1:\s*([-+]?\d*\.?\d+)\s*Pa)?"
+    r"(?:.*?DELTA_P1F:\s*([-+]?\d*\.?\d+)\s*Pa)?"
+    r"(?:.*?DELTA_P2:\s*([-+]?\d*\.?\d+)\s*Pa)?"
+    r"(?:.*?DELTA_P2F:\s*([-+]?\d*\.?\d+)\s*Pa)?"
 )
 
 CFG_RE = re.compile(
@@ -326,6 +330,10 @@ class AppState:
             eq_pwm = float(m.group(27) or 0.0)
             humidity_pct = float(m.group(28)) if m.group(28) is not None else None
             hum_temp_c   = float(m.group(29)) if m.group(29) is not None else None
+            delta_p1     = float(m.group(30)) if m.group(30) is not None else None
+            delta_p1f    = float(m.group(31)) if m.group(31) is not None else None
+            delta_p2     = float(m.group(32)) if m.group(32) is not None else None
+            delta_p2f    = float(m.group(33)) if m.group(33) is not None else None
 
             now_iso = dt.datetime.now(dt.timezone.utc).astimezone().isoformat(timespec="milliseconds")
 
@@ -362,6 +370,10 @@ class AppState:
                 "eq_pwm": eq_pwm,
                 "humidity_pct": humidity_pct,
                 "hum_temp_c": hum_temp_c,
+                "delta_p1":   delta_p1,
+                "delta_p1f":  delta_p1f,
+                "delta_p2":   delta_p2,
+                "delta_p2f":  delta_p2f,
             }
             self.last_telemetry = telemetry
             self.broadcast_sync(telemetry)
@@ -422,6 +434,10 @@ class AppState:
                         "abs_error_c": abs_err,
                         "run_state": run_state,
                         "fan_inverted": 1 if fan_inv == "1" else 0,
+                        "delta_p1_pa":  "" if delta_p1  is None else delta_p1,
+                        "delta_p1f_pa": "" if delta_p1f is None else delta_p1f,
+                        "delta_p2_pa":  "" if delta_p2  is None else delta_p2,
+                        "delta_p2f_pa": "" if delta_p2f is None else delta_p2f,
                         "event": "",
                     })
                     if self.csv_file:
@@ -462,7 +478,9 @@ class AppState:
         "pid_bias", "setpoint_bias_c", "setpoint_c", "effective_setpoint_c",
         "fan_speed_pct", "fan_pwm_raw", "mode", "state", "manual_pwm_cmd",
         "hold_pwm", "enter_progress_pct", "exit_progress_pct", "abs_error_c",
-        "run_state", "fan_inverted", "humidity_pct", "hum_temp_c", "event",
+        "run_state", "fan_inverted", "humidity_pct", "hum_temp_c",
+        "delta_p1_pa", "delta_p1f_pa", "delta_p2_pa", "delta_p2f_pa",
+        "event",
     ]
 
     def start_csv_logging(self) -> tuple[bool, str]:
@@ -477,7 +495,7 @@ class AppState:
             self.csv_file = open(path, "w", newline="", encoding="utf-8")
             # Write metadata comment header
             start_iso = dt.datetime.now(dt.timezone.utc).astimezone().isoformat(timespec="seconds")
-            self.csv_file.write(f"# schema_version: 2\n")
+            self.csv_file.write(f"# schema_version: 3\n")
             self.csv_file.write(f"# run_id: {self.pending_run_id}\n")
             self.csv_file.write(f"# heatsink_id: {self.pending_heatsink_id}\n")
             self.csv_file.write(f"# start_time: {start_iso}\n")
@@ -550,6 +568,10 @@ class VirtualMCU:
         self._t = 0.0
 
         self.speed = 1  # 1=realtime, 5=5x faster, etc.
+
+        # Simulated pressure state
+        self._p1_ema = 0.0
+        self._p2_ema = 0.0
 
         # Ambient / heater physics constants
         # Calibrated from real CSV: reaches 60°C in ~163s at PWM=255 from 21.5°C
@@ -672,6 +694,13 @@ class VirtualMCU:
             fan_pwm_val = int((1.0 - self.fan) * 255) if self.fan_inv else int(self.fan * 255)
             abs_err_val = abs(effsp - self._temp)
 
+            # Simulated differential pressure: ramps with fan speed + noise
+            fan_pct = self.fan * 100.0
+            p1_raw = max(0.0, fan_pct * 3.5 + random.gauss(0, 2.0))
+            self._p1_ema = 0.15 * p1_raw + 0.85 * self._p1_ema
+            p2_raw = max(0.0, fan_pct * 2.8 + random.gauss(0, 2.0))
+            self._p2_ema = 0.15 * p2_raw + 0.85 * self._p2_ema
+
             line = (
                 f"Rawtemp {self._temp + random.gauss(0,0.1):.2f} C | "
                 f"Temp: {self._temp:.2f} C | Smooth: {self._smooth:.2f} C | "
@@ -683,7 +712,9 @@ class VirtualMCU:
                 f"MANPWM: {self.manpwm:.2f} | HOLDPWM: {self._holdpwm:.2f} | "
                 f"ENTPROG: {self._enter_prog*100:.1f} | EXTPROG: {self._exit_prog*100:.1f} | "
                 f"EABS: {abs_err_val:.2f} | RUN: {self.run} | FANINV: {self.fan_inv} | "
-                f"V: {voltage_v:.3f} V | I: {current_a:.4f} A | W: {power_calc:.3f} W"
+                f"V: {voltage_v:.3f} V | I: {current_a:.4f} A | W: {power_calc:.3f} W | "
+                f"DELTA_P1: {p1_raw:.2f} Pa | DELTA_P1F: {self._p1_ema:.2f} Pa | "
+                f"DELTA_P2: {p2_raw:.2f} Pa | DELTA_P2F: {self._p2_ema:.2f} Pa"
             )
             self._state.broadcast_sync({"type": "log", "text": line})
             self._state._handle_line(line)

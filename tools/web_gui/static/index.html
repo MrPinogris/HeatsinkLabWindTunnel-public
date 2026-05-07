@@ -529,6 +529,10 @@
           <div class="telem-item"><span class="telem-label">Power W</span><span class="telem-value" id="tPowerW">-</span></div>
           <div class="telem-item"><span class="telem-label">Humidity</span><span class="telem-value" id="tHumidity">-</span></div>
           <div class="telem-item"><span class="telem-label">Amb. Temp</span><span class="telem-value" id="tHumTemp">-</span></div>
+          <div class="telem-item"><span class="telem-label">ΔP1 Raw (Pa)</span><span class="telem-value" id="tDeltaP1">-</span></div>
+          <div class="telem-item"><span class="telem-label">ΔP1 Filt (Pa)</span><span class="telem-value" id="tDeltaP1F">-</span></div>
+          <div class="telem-item"><span class="telem-label">ΔP2 Raw (Pa)</span><span class="telem-value" id="tDeltaP2">-</span></div>
+          <div class="telem-item"><span class="telem-label">ΔP2 Filt (Pa)</span><span class="telem-value" id="tDeltaP2F">-</span></div>
         </div>
       </div>
 
@@ -724,6 +728,12 @@
           <label class="series-check" title="Heater power in Watts from INA226 current sensor"><input type="checkbox" onchange="toggleSeries('power_w', this)"><span class="swatch" style="background:#fde047"></span><span>Power W</span></label>
           <label class="series-check" title="SMART mode: progress toward entering HOLD state (0–100%)"><input type="checkbox" onchange="toggleSeries('enter_prog', this)"><span class="swatch" style="background:#a3e635"></span><span>Enter %</span></label>
           <label class="series-check" title="SMART mode: progress toward exiting HOLD state (0–100%)"><input type="checkbox" onchange="toggleSeries('exit_prog', this)"><span class="swatch" style="background:#facc15"></span><span>Exit %</span></label>
+          <label class="series-check" title="Ambient relative humidity from EZO-HUM probe (%)"><input type="checkbox" onchange="toggleSeries('humidity_pct', this)"><span class="swatch" style="background:#22d3ee"></span><span>Humidity</span></label>
+          <label class="series-check" title="Ambient temperature measured by EZO-HUM probe (°C)"><input type="checkbox" onchange="toggleSeries('hum_temp_c', this)"><span class="swatch" style="background:#818cf8"></span><span>Amb. Temp</span></label>
+          <label class="series-check" title="Differential pressure sensor 1 — raw ADC reading (Pa)"><input type="checkbox" onchange="toggleSeries('delta_p1', this)"><span class="swatch" style="background:#f87171"></span><span>ΔP1 Raw</span></label>
+          <label class="series-check" title="Differential pressure sensor 1 — EMA filtered (Pa)"><input type="checkbox" onchange="toggleSeries('delta_p1f', this)"><span class="swatch" style="background:#fb923c"></span><span>ΔP1 Filt</span></label>
+          <label class="series-check" title="Differential pressure sensor 2 — raw ADC reading (Pa)"><input type="checkbox" onchange="toggleSeries('delta_p2', this)"><span class="swatch" style="background:#a78bfa"></span><span>ΔP2 Raw</span></label>
+          <label class="series-check" title="Differential pressure sensor 2 — EMA filtered (Pa)"><input type="checkbox" onchange="toggleSeries('delta_p2f', this)"><span class="swatch" style="background:#c084fc"></span><span>ΔP2 Filt</span></label>
         </div>
         <div style="margin-top:4px;" data-expert="true">
           <button class="small" id="btnPidDebug" onclick="togglePidDebug()" title="Show or hide P, I, D and PID output series on the chart">PID Debug: OFF</button>
@@ -868,7 +878,9 @@ let wsConnected = false;
 const history = {
   ts: [], raw_temp: [], temp: [], smooth: [], sp: [],
   pwm: [], p_term: [], i_term: [], d_term: [], pid_out: [],
-  holdpwm: [], enter_prog: [], exit_prog: [], fan_pwm: [], eq_pwm: [], power_w: []
+  holdpwm: [], enter_prog: [], exit_prog: [], fan_pwm: [], eq_pwm: [], power_w: [],
+  humidity_pct: [], hum_temp_c: [],
+  delta_p1: [], delta_p1f: [], delta_p2: [], delta_p2f: []
 };
 
 const markers = [];  // [{ts, label}]
@@ -899,8 +911,14 @@ const SERIES_CFG = [
   { key: 'holdpwm',   label: 'Hold PWM',  color: '#4ade80', yAxis: 'y2', hidden: true },
   { key: 'eq_pwm',    label: 'Eq PWM',    color: '#f43f5e', yAxis: 'y2', hidden: true },
   { key: 'power_w',   label: 'Power W',   color: '#fde047', yAxis: 'y2', hidden: true },
-  { key: 'enter_prog', label: 'Enter %',   color: '#a3e635', yAxis: 'y2', hidden: true },
-  { key: 'exit_prog',  label: 'Exit %',    color: '#facc15', yAxis: 'y2', hidden: true },
+  { key: 'enter_prog',   label: 'Enter %',   color: '#a3e635', yAxis: 'y2', hidden: true },
+  { key: 'exit_prog',    label: 'Exit %',    color: '#facc15', yAxis: 'y2', hidden: true },
+  { key: 'humidity_pct', label: 'Humidity',  color: '#22d3ee', yAxis: 'y2', hidden: true },
+  { key: 'hum_temp_c',   label: 'Amb. Temp',   color: '#818cf8', yAxis: 'y',  hidden: true },
+  { key: 'delta_p1',     label: 'ΔP1 Raw (Pa)', color: '#f87171', yAxis: 'y3', hidden: true },
+  { key: 'delta_p1f',    label: 'ΔP1 Filt(Pa)', color: '#fb923c', yAxis: 'y3', hidden: true },
+  { key: 'delta_p2',     label: 'ΔP2 Raw (Pa)', color: '#a78bfa', yAxis: 'y3', hidden: true },
+  { key: 'delta_p2f',    label: 'ΔP2 Filt(Pa)', color: '#c084fc', yAxis: 'y3', hidden: true },
 ];
 
 const chartDatasets = SERIES_CFG.map(s => ({
@@ -957,6 +975,13 @@ const chart = new Chart(ctx, {
         title: { display: true, text: 'PWM / Other', color: '#a78bfa' },
         ticks: { color: '#a78bfa' },
         grid: { drawOnChartArea: false },
+      },
+      y3: {
+        position: 'right',
+        title: { display: true, text: 'Pressure [Pa]', color: '#f87171' },
+        ticks: { color: '#f87171' },
+        grid: { drawOnChartArea: false },
+        display: 'auto',
       },
     }
   }
@@ -1246,6 +1271,10 @@ function updateTelemetry(d) {
   document.getElementById('tPowerW').textContent = fmt(d.power_w, 3) + ' W';
   document.getElementById('tHumidity').textContent = d.humidity_pct != null ? fmt(d.humidity_pct, 1) + ' %' : '-';
   document.getElementById('tHumTemp').textContent = d.hum_temp_c != null ? fmt(d.hum_temp_c, 1) + ' °C' : '-';
+  document.getElementById('tDeltaP1').textContent  = d.delta_p1  != null ? fmt(d.delta_p1,  1) + ' Pa' : '-';
+  document.getElementById('tDeltaP1F').textContent = d.delta_p1f != null ? fmt(d.delta_p1f, 1) + ' Pa' : '-';
+  document.getElementById('tDeltaP2').textContent  = d.delta_p2  != null ? fmt(d.delta_p2,  1) + ' Pa' : '-';
+  document.getElementById('tDeltaP2F').textContent = d.delta_p2f != null ? fmt(d.delta_p2f, 1) + ' Pa' : '-';
 }
 
 function pushHistory(d) {
@@ -1267,6 +1296,12 @@ function pushHistory(d) {
   history.fan_pwm.push(d.fan_pwm);
   history.eq_pwm.push(d.eq_pwm ?? 0);
   history.power_w.push(d.power_w ?? 0);
+  history.humidity_pct.push(d.humidity_pct ?? null);
+  history.hum_temp_c.push(d.hum_temp_c ?? null);
+  history.delta_p1.push(d.delta_p1 ?? null);
+  history.delta_p1f.push(d.delta_p1f ?? null);
+  history.delta_p2.push(d.delta_p2 ?? null);
+  history.delta_p2f.push(d.delta_p2f ?? null);
 
   const trim = Math.max(100, Math.min(200000, maxPts));
   if (history.ts.length > trim * 1.1) {
@@ -1719,6 +1754,7 @@ const CSV_COLUMN_GROUPS = {
   'PID Details': ['pwm','p_term','i_term','d_term','pid_out','pid_bias','setpoint_bias_c'],
   'Smart Mode':  ['mode','state','hold_pwm','enter_progress_pct','exit_progress_pct','run_state'],
   'Fan':         ['fan_speed_pct','fan_pwm_raw','fan_inverted','manual_pwm_cmd'],
+  'Pressure':    ['delta_p1_pa','delta_p1f_pa','delta_p2_pa','delta_p2f_pa'],
 };
 
 const CSV_EXCEL_TYPES = {
@@ -1730,6 +1766,8 @@ const CSV_EXCEL_TYPES = {
   mode:'type text', state:'type text', manual_pwm_cmd:'type number',
   hold_pwm:'type number', enter_progress_pct:'type number', exit_progress_pct:'type number',
   abs_error_c:'type number', run_state:'type text', fan_inverted:'Int64.Type', event:'type text',
+  delta_p1_pa:'type number', delta_p1f_pa:'type number',
+  delta_p2_pa:'type number', delta_p2f_pa:'type number',
 };
 
 function toggleExcelHelp() {

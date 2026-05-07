@@ -11,6 +11,7 @@ ESP32-S3 based heatsink characterisation platform with PID temperature control, 
 | MCU | ESP32-S3 DevKit C1 |
 | Temperature | MAX6675 thermocouple (SPI) |
 | Current/Power | INA226 (I2C, addr 0x40) |
+| Humidity probe | EZO-HUM (I2C, addr 0x6F) |
 | Heater MOSFET | Pin 4 (PWM 500 Hz, 8-bit) |
 | Fan PWM | Pin 5 (PWM 500 Hz, 8-bit) |
 | I2C SDA | Pin 15 |
@@ -29,6 +30,18 @@ INA226 GND  →  GND (common with ESP32)
 INA226 SDA  →  Pin 15
 INA226 SCL  →  Pin 16
 ```
+
+### EZO-HUM Wiring
+```
+EZO-HUM VCC (red)    →  3.3 V
+EZO-HUM GND (black)  →  GND (common with ESP32)
+EZO-HUM SDA (green)  →  Pin 15  (shared I2C bus with INA226)
+EZO-HUM SCL (white)  →  Pin 16  (shared I2C bus with INA226)
+EZO-HUM AUTO (blue)  →  leave floating
+```
+
+> **First-time setup:** Factory default is UART mode (blinking green LED).
+> Send `I2C,111\r` at 9600 baud over UART once, then power-cycle until the LED is solid blue.
 
 ---
 
